@@ -59,6 +59,18 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("detects arbitrary slash commands so custom prompts can autocomplete", () => {
+    const text = "/prompts:rev";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "prompts:rev",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
   it("detects @path trigger in the middle of existing text", () => {
     // User typed @ between "inspect " and "in this sentence"
     const text = "Please inspect @in this sentence";
@@ -106,6 +118,20 @@ describe("replaceTextRange", () => {
     expect(replaced).toEqual({
       text: "hello ",
       cursor: 6,
+    });
+  });
+
+  it("supports placing the cursor inside inserted text", () => {
+    const replaced = replaceTextRange(
+      "",
+      0,
+      0,
+      '/prompts:review FILE=""',
+      '/prompts:review FILE="'.length,
+    );
+    expect(replaced).toEqual({
+      text: '/prompts:review FILE=""',
+      cursor: '/prompts:review FILE="'.length,
     });
   });
 });

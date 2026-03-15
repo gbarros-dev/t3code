@@ -1,7 +1,12 @@
-import { type ProjectEntry, type ModelSlug, type ProviderKind } from "@t3tools/contracts";
+import {
+  type CodexCustomPrompt,
+  type ProjectEntry,
+  type ModelSlug,
+  type ProviderKind,
+} from "@t3tools/contracts";
 import { memo } from "react";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
-import { BotIcon } from "lucide-react";
+import { BotIcon, ScrollTextIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandItem, CommandList } from "../ui/command";
@@ -20,6 +25,13 @@ export type ComposerCommandItem =
       id: string;
       type: "slash-command";
       command: ComposerSlashCommand;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "prompt";
+      prompt: CodexCustomPrompt;
       label: string;
       description: string;
     }
@@ -65,10 +77,14 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         {props.items.length === 0 && (
           <p className="px-3 py-2 text-muted-foreground/70 text-xs">
             {props.isLoading
-              ? "Searching workspace files..."
+              ? props.triggerKind === "path"
+                ? "Searching workspace files..."
+                : "Loading custom prompts..."
               : props.triggerKind === "path"
                 ? "No matching files or folders."
-                : "No matching command."}
+                : props.triggerKind === "slash-command"
+                  ? "No matching command or prompt."
+                  : "No matching model."}
           </p>
         )}
       </div>
@@ -105,6 +121,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       ) : null}
       {props.item.type === "slash-command" ? (
         <BotIcon className="size-4 text-muted-foreground/80" />
+      ) : null}
+      {props.item.type === "prompt" ? (
+        <ScrollTextIcon className="size-4 text-muted-foreground/80" />
       ) : null}
       {props.item.type === "model" ? (
         <Badge variant="outline" className="px-1.5 py-0 text-[10px]">

@@ -1,3 +1,4 @@
+import type { CodexListCustomPromptsInput, CodexListCustomPromptsResult } from "./codex";
 import type {
   GitCheckoutInput,
   GitCreateBranchInput,
@@ -149,6 +150,11 @@ export interface NativeApi {
     pull: (input: GitPullInput) => Promise<GitPullResult>;
     status: (input: GitStatusInput) => Promise<GitStatusResult>;
     runStackedAction: (input: GitRunStackedActionInput) => Promise<GitRunStackedActionResult>;
+  };
+  codex: {
+    listCustomPrompts: (
+      input?: CodexListCustomPromptsInput,
+    ) => Promise<CodexListCustomPromptsResult>;
   };
   contextMenu: {
     show: <T extends string>(

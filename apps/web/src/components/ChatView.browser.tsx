@@ -2,6 +2,7 @@
 import "../index.css";
 
 import {
+  type CodexCustomPrompt,
   ORCHESTRATION_WS_METHODS,
   type MessageId,
   type OrchestrationReadModel,
@@ -41,10 +42,38 @@ interface WsRequestEnvelope {
   };
 }
 
+function isTurnStartRequestBody(
+  request: WsRequestEnvelope["body"],
+): request is WsRequestEnvelope["body"] & {
+  command: { type: "thread.turn.start"; message: { text: string } };
+} {
+  return (
+    request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+    !!request.command &&
+    typeof request.command === "object" &&
+    "type" in request.command &&
+    request.command.type === "thread.turn.start" &&
+    "message" in request.command &&
+    !!request.command.message &&
+    typeof request.command.message === "object" &&
+    "text" in request.command.message &&
+    typeof request.command.message.text === "string"
+  );
+}
+
+function countCodexPromptRequests(): number {
+  return wsRequests.filter((request) => request._tag === WS_METHODS.codexListCustomPrompts).length;
+}
+
+function latestCodexPromptRequest(): WsRequestEnvelope["body"] | undefined {
+  return wsRequests.findLast((request) => request._tag === WS_METHODS.codexListCustomPrompts);
+}
+
 interface TestFixture {
   snapshot: OrchestrationReadModel;
   serverConfig: ServerConfig;
   welcome: WsWelcomePayload;
+  customPrompts: CodexCustomPrompt[];
 }
 
 let fixture: TestFixture;
@@ -247,6 +276,7 @@ function buildFixture(snapshot: OrchestrationReadModel): TestFixture {
       bootstrapProjectId: PROJECT_ID,
       bootstrapThreadId: THREAD_ID,
     },
+    customPrompts: [],
   };
 }
 
@@ -363,6 +393,11 @@ function resolveWsRpc(body: WsRequestEnvelope["body"]): unknown {
   }
   if (tag === WS_METHODS.serverGetConfig) {
     return fixture.serverConfig;
+  }
+  if (tag === WS_METHODS.codexListCustomPrompts) {
+    return {
+      prompts: fixture.customPrompts,
+    };
   }
   if (tag === WS_METHODS.gitListBranches) {
     return {
@@ -485,6 +520,33 @@ async function waitForProductionStyles(): Promise<void> {
       interval: 16,
     },
   );
+}
+
+async function dispatchActiveKey(key: string): Promise<void> {
+  const activeElement = document.activeElement as HTMLElement | null;
+  if (!activeElement) {
+    throw new Error(`Unable to dispatch ${key}: no active element.`);
+  }
+  activeElement.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  activeElement.dispatchEvent(
+    new KeyboardEvent("keyup", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  await waitForLayout();
+}
+
+function readSelectionOffset(): number | null {
+  const selection = document.getSelection();
+  return selection ? selection.anchorOffset : null;
 }
 
 async function waitForElement<T extends Element>(
@@ -1242,6 +1304,219 @@ describe("ChatView timeline estimator parity (full app)", () => {
           expect(document.body.textContent).toContain("deep hidden detail only after expand");
         },
         { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("lists custom prompts, inserts prompt args, tabs between them, and expands before send", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-custom-prompt-test" as MessageId,
+        targetText: "custom prompt test",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.customPrompts = [
+          {
+            name: "review",
+            description: "Review a file with a priority",
+            content: "Review $FILE with priority $LEVEL",
+          },
+        ];
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(countCodexPromptRequests()).toBe(1);
+          expect(latestCodexPromptRequest()).toEqual(
+            expect.objectContaining({
+              _tag: WS_METHODS.codexListCustomPrompts,
+              projectPath: "/repo/project",
+            }),
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const composer = page.getByTestId("composer-editor");
+      await expect.element(composer).toBeInTheDocument();
+      await composer.click();
+      await composer.fill("/prompts:rev");
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("/prompts:review");
+          expect(document.body.textContent).toContain("Review a file with a priority");
+          expect(countCodexPromptRequests()).toBe(1);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await dispatchActiveKey("Tab");
+
+      await vi.waitFor(
+        () => {
+          expect(document.querySelector('[data-testid="composer-editor"]')?.textContent).toBe(
+            '/prompts:review FILE="" LEVEL=""',
+          );
+          expect(readSelectionOffset()).toBe('/prompts:review FILE="'.length);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await dispatchActiveKey("Tab");
+
+      await vi.waitFor(
+        () => {
+          expect(readSelectionOffset()).toBe('/prompts:review FILE="" LEVEL="'.length);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await composer.fill('/prompts:review FILE="src/app.ts" LEVEL="high"');
+      await dispatchActiveKey("Enter");
+
+      await vi.waitFor(
+        () => {
+          const turnStartRequest = wsRequests.find(isTurnStartRequestBody);
+          expect(turnStartRequest).toBeTruthy();
+          expect(turnStartRequest?.command.message.text).toBe(
+            "Review src/app.ts with priority high",
+          );
+          expect(document.body.textContent).toContain("Review src/app.ts with priority high");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("sends zero-argument custom prompt content immediately on selection", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-custom-prompt-direct-send" as MessageId,
+        targetText: "custom prompt direct send test",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.customPrompts = [
+          {
+            name: "status",
+            description: "Summarize the current project status",
+            content: "Summarize the current project status.",
+          },
+        ];
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(countCodexPromptRequests()).toBe(1);
+          expect(latestCodexPromptRequest()).toEqual(
+            expect.objectContaining({
+              _tag: WS_METHODS.codexListCustomPrompts,
+              projectPath: "/repo/project",
+            }),
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const composer = page.getByTestId("composer-editor");
+      await expect.element(composer).toBeInTheDocument();
+      await composer.click();
+      await composer.fill("/prompts:sta");
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("/prompts:status");
+          expect(document.body.textContent).toContain("Summarize the current project status");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await dispatchActiveKey("Tab");
+
+      await vi.waitFor(
+        () => {
+          const turnStartRequest = wsRequests.find(isTurnStartRequestBody);
+          expect(turnStartRequest).toBeTruthy();
+          expect(turnStartRequest?.command.message.text).toBe(
+            "Summarize the current project status.",
+          );
+          expect(document.body.textContent).toContain("Summarize the current project status.");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("blocks malformed custom prompt args and keeps the draft intact", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-custom-prompt-error-test" as MessageId,
+        targetText: "custom prompt error test",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.customPrompts = [
+          {
+            name: "review",
+            content: "Review $FILE",
+          },
+        ];
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(countCodexPromptRequests()).toBe(1);
+          expect(latestCodexPromptRequest()).toEqual(
+            expect.objectContaining({
+              _tag: WS_METHODS.codexListCustomPrompts,
+              projectPath: "/repo/project",
+            }),
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const composer = page.getByTestId("composer-editor");
+      await expect.element(composer).toBeInTheDocument();
+      await composer.click();
+      await composer.fill("/prompts:rev");
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain("/prompts:review");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await composer.fill("/prompts:review src/app.ts");
+      await dispatchActiveKey("Enter");
+
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent).toContain(
+            "Could not parse /prompts:review: expected key=value but found 'src/app.ts'.",
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      expect(wsRequests.some(isTurnStartRequestBody)).toBe(false);
+      expect(document.querySelector('[data-testid="composer-editor"]')?.textContent).toBe(
+        "/prompts:review src/app.ts",
       );
     } finally {
       await mounted.cleanup();

@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  type CodexCustomPrompt,
   DEFAULT_MODEL_BY_PROVIDER,
   type EditorId,
   type KeybindingCommand,
@@ -22,6 +23,12 @@ import {
   ProviderInteractionMode,
 } from "@t3tools/contracts";
 import {
+  buildCustomPromptInsertText,
+  expandCustomPromptInvocation,
+  findNextCustomPromptArgCursor,
+  getCustomPromptArgumentHint,
+} from "@t3tools/shared/codex";
+import {
   getDefaultModel,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
@@ -33,6 +40,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { gitBranchesQueryOptions, gitCreateWorktreeMutationOptions } from "~/lib/gitReactQuery";
+import { codexCustomPromptsQueryOptions } from "~/lib/codexReactQuery";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
 import { isElectron } from "../env";
@@ -142,6 +150,7 @@ import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu"
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./chat/ComposerPlanFollowUpBanner";
+import { CodexPromptDebugBanner } from "./chat/CodexPromptDebugBanner";
 import { ProviderHealthBanner } from "./chat/ProviderHealthBanner";
 import { ThreadErrorBanner } from "./chat/ThreadErrorBanner";
 import {
@@ -169,6 +178,7 @@ const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const EMPTY_AVAILABLE_EDITORS: EditorId[] = [];
 const EMPTY_PROVIDER_STATUSES: ServerProviderStatus[] = [];
+const EMPTY_CODEX_CUSTOM_PROMPTS: CodexCustomPrompt[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const SCRIPT_TERMINAL_COLS = 120;
@@ -517,6 +527,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const selectedEffort = composerDraft.effort ?? getDefaultReasoningEffort(selectedProvider);
   const selectedCodexFastModeEnabled =
     selectedProvider === "codex" ? composerDraft.codexFastMode : false;
+  const effectiveCodexHomePath =
+    settings.codexHomePath && settings.codexHomePath.trim().length > 0
+      ? settings.codexHomePath.trim()
+      : null;
   const selectedModelOptionsForDispatch = useMemo(() => {
     if (selectedProvider !== "codex") {
       return undefined;
@@ -528,16 +542,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
     return Object.keys(codexOptions).length > 0 ? { codex: codexOptions } : undefined;
   }, [selectedCodexFastModeEnabled, selectedEffort, selectedProvider, supportsReasoningEffort]);
   const providerOptionsForDispatch = useMemo(() => {
-    if (!settings.codexBinaryPath && !settings.codexHomePath) {
+    if (!settings.codexBinaryPath && !effectiveCodexHomePath) {
       return undefined;
     }
     return {
       codex: {
         ...(settings.codexBinaryPath ? { binaryPath: settings.codexBinaryPath } : {}),
-        ...(settings.codexHomePath ? { homePath: settings.codexHomePath } : {}),
+        ...(effectiveCodexHomePath ? { homePath: effectiveCodexHomePath } : {}),
       },
     };
-  }, [settings.codexBinaryPath, settings.codexHomePath]);
+  }, [effectiveCodexHomePath, settings.codexBinaryPath]);
   const selectedModelForPicker = selectedModel;
   const modelOptionsByProvider = useMemo(
     () => getCustomModelOptionsByProvider(settings),
@@ -914,6 +928,36 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const effectivePathQuery = pathTriggerQuery.length > 0 ? debouncedPathQuery : "";
   const branchesQuery = useQuery(gitBranchesQueryOptions(gitCwd));
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
+  const activeProjectId = activeProject?.id ?? null;
+  const activeProjectPath = activeProject?.cwd ?? null;
+  const shouldLoadCodexCustomPrompts = selectedProvider === "codex" && activeProjectId !== null;
+  const codexCustomPromptsQuery = useQuery(
+    codexCustomPromptsQueryOptions({
+      enabled: shouldLoadCodexCustomPrompts,
+      projectId: activeProjectId,
+      projectPath: activeProjectPath,
+      homePath: effectiveCodexHomePath,
+    }),
+  );
+  useEffect(() => {
+    if (!shouldLoadCodexCustomPrompts) {
+      return;
+    }
+    void queryClient.prefetchQuery(
+      codexCustomPromptsQueryOptions({
+        enabled: true,
+        projectId: activeProjectId,
+        projectPath: activeProjectPath,
+        homePath: effectiveCodexHomePath,
+      }),
+    );
+  }, [
+    activeProjectId,
+    activeProjectPath,
+    effectiveCodexHomePath,
+    queryClient,
+    shouldLoadCodexCustomPrompts,
+  ]);
   const workspaceEntriesQuery = useQuery(
     projectSearchEntriesQueryOptions({
       cwd: gitCwd,
@@ -923,6 +967,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const codexCustomPrompts = codexCustomPromptsQuery.data?.prompts ?? EMPTY_CODEX_CUSTOM_PROMPTS;
+  const codexCustomPromptsErrorMessage =
+    codexCustomPromptsQuery.error instanceof Error
+      ? codexCustomPromptsQuery.error.message
+      : codexCustomPromptsQuery.error
+        ? String(codexCustomPromptsQuery.error)
+        : null;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -961,12 +1012,38 @@ export default function ChatView({ threadId }: ChatViewProps) {
         },
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const query = composerTrigger.query.trim().toLowerCase();
-      if (!query) {
-        return [...slashCommandItems];
-      }
-      return slashCommandItems.filter(
-        (item) => item.command.includes(query) || item.label.slice(1).includes(query),
-      );
+      const matchingSlashCommandItems = !query
+        ? [...slashCommandItems]
+        : slashCommandItems.filter(
+            (item) => item.command.includes(query) || item.label.slice(1).includes(query),
+          );
+      const promptItems =
+        selectedProvider !== "codex"
+          ? []
+          : codexCustomPrompts
+              .toSorted((left, right) => left.name.localeCompare(right.name))
+              .filter((prompt) => {
+                if (!query) {
+                  return true;
+                }
+                const normalizedName = prompt.name.toLowerCase();
+                const normalizedCommand = `prompts:${normalizedName}`;
+                const normalizedDescription = prompt.description?.toLowerCase() ?? "";
+                return (
+                  normalizedName.includes(query) ||
+                  normalizedCommand.includes(query) ||
+                  normalizedDescription.includes(query)
+                );
+              })
+              .map((prompt) => ({
+                id: `prompt:${prompt.name}`,
+                type: "prompt" as const,
+                prompt,
+                label: `/prompts:${prompt.name}`,
+                description:
+                  prompt.description ?? getCustomPromptArgumentHint(prompt) ?? "Custom prompt",
+              }));
+      return [...matchingSlashCommandItems, ...promptItems];
     }
 
     return searchableModelOptions
@@ -985,7 +1062,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
+  }, [
+    codexCustomPrompts,
+    composerTrigger,
+    searchableModelOptions,
+    selectedProvider,
+    workspaceEntries,
+  ]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -2204,7 +2287,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       onAdvanceActivePendingUserInput();
       return;
     }
-    const trimmed = prompt.trim();
+    const trimmed = promptRef.current.trim();
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
@@ -2232,6 +2315,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerTrigger(null);
       return;
     }
+    const customPromptExpansion =
+      selectedProvider === "codex"
+        ? expandCustomPromptInvocation(trimmed, codexCustomPrompts)
+        : null;
+    if (customPromptExpansion && "error" in customPromptExpansion) {
+      setStoreThreadError(activeThread.id, customPromptExpansion.error);
+      return;
+    }
+    const textForSend = customPromptExpansion?.expanded ?? trimmed;
     if (!trimmed && composerImages.length === 0) return;
     if (!activeProject) return;
     const threadIdForSend = activeThread.id;
@@ -2281,7 +2373,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       {
         id: messageIdForSend,
         role: "user",
-        text: trimmed,
+        text: textForSend,
         ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
         createdAt: messageCreatedAt,
         streaming: false,
@@ -2335,7 +2427,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           firstComposerImageName = firstComposerImage.name;
         }
       }
-      let titleSeed = trimmed;
+      let titleSeed = textForSend;
       if (!titleSeed) {
         if (firstComposerImageName) {
           titleSeed = `Image: ${firstComposerImageName}`;
@@ -2419,7 +2511,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         message: {
           messageId: messageIdForSend,
           role: "user",
-          text: trimmed || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+          text: textForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
           attachments: turnAttachments,
         },
         model: selectedModel || undefined,
@@ -2924,7 +3016,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       rangeStart: number,
       rangeEnd: number,
       replacement: string,
-      options?: { expectedText?: string },
+      options?: { expectedText?: string; cursorOffset?: number },
     ): boolean => {
       const currentText = promptRef.current;
       const safeStart = Math.max(0, Math.min(currentText.length, rangeStart));
@@ -2935,7 +3027,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
       ) {
         return false;
       }
-      const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
+      const next = replaceTextRange(
+        promptRef.current,
+        rangeStart,
+        rangeEnd,
+        replacement,
+        options?.cursorOffset,
+      );
       const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
       promptRef.current = next.text;
       const activePendingQuestion = activePendingProgress?.activeQuestion;
@@ -3047,6 +3145,34 @@ export default function ChatView({ threadId }: ChatViewProps) {
         }
         return;
       }
+      if (item.type === "prompt") {
+        const promptArgumentHint = getCustomPromptArgumentHint(item.prompt);
+        if (!promptArgumentHint && composerImages.length === 0) {
+          promptRef.current = item.prompt.content;
+          setPrompt(item.prompt.content);
+          setComposerCursor(item.prompt.content.length);
+          setComposerTrigger(null);
+          setComposerHighlightedItemId(null);
+          composerFormRef.current?.requestSubmit();
+          return;
+        }
+        const replacement = buildCustomPromptInsertText(item.prompt);
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          trigger.rangeEnd,
+          replacement.text,
+          {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            ...(typeof replacement.cursorOffset === "number"
+              ? { cursorOffset: replacement.cursorOffset }
+              : {}),
+          },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
       onProviderModelSelect(item.provider, item.model);
       const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
         expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -3057,9 +3183,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
     },
     [
       applyPromptReplacement,
+      composerImages.length,
       handleInteractionModeChange,
       onProviderModelSelect,
       resolveActiveComposerTrigger,
+      setPrompt,
     ],
   );
   const onComposerMenuItemHighlighted = useCallback((itemId: string | null) => {
@@ -3084,10 +3212,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [composerHighlightedItemId, composerMenuItems],
   );
   const isComposerMenuLoading =
-    composerTriggerKind === "path" &&
-    ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-      workspaceEntriesQuery.isLoading ||
-      workspaceEntriesQuery.isFetching);
+    (composerTriggerKind === "path" &&
+      ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
+        workspaceEntriesQuery.isLoading ||
+        workspaceEntriesQuery.isFetching)) ||
+    (composerTriggerKind === "slash-command" &&
+      shouldLoadCodexCustomPrompts &&
+      (codexCustomPromptsQuery.isLoading || codexCustomPromptsQuery.isFetching));
 
   const onPromptChange = useCallback(
     (
@@ -3149,6 +3280,23 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onSelectComposerItem(selectedItem);
           return true;
         }
+      }
+    }
+
+    if (key === "Tab") {
+      const snapshot = readComposerSnapshot();
+      const nextExpandedCursor = findNextCustomPromptArgCursor(
+        snapshot.value,
+        snapshot.expandedCursor,
+      );
+      if (nextExpandedCursor !== null) {
+        const nextCursor = collapseExpandedComposerCursor(snapshot.value, nextExpandedCursor);
+        setComposerCursor(nextCursor);
+        setComposerTrigger(detectComposerTrigger(snapshot.value, nextExpandedCursor));
+        window.requestAnimationFrame(() => {
+          composerEditorRef.current?.focusAt(nextCursor);
+        });
+        return true;
       }
     }
 
@@ -3256,6 +3404,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
       <ThreadErrorBanner
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
+      />
+      <CodexPromptDebugBanner
+        provider={selectedProvider}
+        activeProjectId={activeProjectId}
+        activeProjectPath={activeProjectPath}
+        effectiveCodexHomePath={effectiveCodexHomePath}
+        shouldLoad={shouldLoadCodexCustomPrompts}
+        queryStatus={codexCustomPromptsQuery.status}
+        fetchStatus={codexCustomPromptsQuery.fetchStatus}
+        promptCount={codexCustomPrompts.length}
+        errorMessage={codexCustomPromptsErrorMessage}
       />
       {/* Main content area with optional plan sidebar */}
       <div className="flex min-h-0 min-w-0 flex-1">

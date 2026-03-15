@@ -1573,6 +1573,52 @@ describe("WebSocket Server", () => {
     });
   });
 
+  it("supports codex.listCustomPrompts", async () => {
+    const projectRoot = makeTempDir("t3code-ws-project-prompts-");
+    const projectPromptsDir = path.join(projectRoot, ".codex", "prompts");
+    fs.mkdirSync(projectPromptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectPromptsDir, "project-review.md"),
+      "Project review $FILE",
+      "utf8",
+    );
+
+    const codexHome = makeTempDir("t3code-ws-codex-prompts-");
+    const promptsDir = path.join(codexHome, "prompts");
+    fs.mkdirSync(promptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(promptsDir, "review.md"),
+      ["---", "description: Review prompt", "---", "Review $FILE"].join("\n"),
+      "utf8",
+    );
+
+    server = await createTestServer({ cwd: "/test" });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.codexListCustomPrompts, {
+      homePath: codexHome,
+      projectPath: projectRoot,
+    });
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual({
+      prompts: [
+        {
+          name: "project-review",
+          content: "Project review $FILE",
+        },
+        {
+          name: "review",
+          description: "Review prompt",
+          content: "Review $FILE",
+        },
+      ],
+    });
+  });
+
   it("supports projects.writeFile within the workspace root", async () => {
     const workspace = makeTempDir("t3code-ws-write-file-");
 

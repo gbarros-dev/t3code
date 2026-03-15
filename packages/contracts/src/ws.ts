@@ -1,5 +1,6 @@
 import { Schema, Struct } from "effect";
 import { NonNegativeInt, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas";
+import { CodexListCustomPromptsInput } from "./codex";
 
 import {
   ClientOrchestrationCommand,
@@ -50,6 +51,9 @@ export const WS_METHODS = {
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
+
+  // Codex methods
+  codexListCustomPrompts: "codex.listCustomPrompts",
 
   // Git methods
   gitPull: "git.pull",
@@ -114,6 +118,9 @@ const WebSocketRequestBody = Schema.Union([
 
   // Shell methods
   tagRequestBody(WS_METHODS.shellOpenInEditor, OpenInEditorInput),
+
+  // Codex methods
+  tagRequestBody(WS_METHODS.codexListCustomPrompts, CodexListCustomPromptsInput),
 
   // Git methods
   tagRequestBody(WS_METHODS.gitPull, GitPullInput),

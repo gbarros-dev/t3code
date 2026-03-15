@@ -132,6 +132,9 @@ export function createWsNativeApi(): NativeApi {
         window.open(url, "_blank", "noopener,noreferrer");
       },
     },
+    codex: {
+      listCustomPrompts: (input) => transport.request(WS_METHODS.codexListCustomPrompts, input),
+    },
     git: {
       pull: (input) => transport.request(WS_METHODS.gitPull, input),
       status: (input) => transport.request(WS_METHODS.gitStatus, input),

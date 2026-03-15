@@ -4,6 +4,7 @@ export * from "./terminal";
 export * from "./provider";
 export * from "./providerRuntime";
 export * from "./model";
+export * from "./codex";
 export * from "./ws";
 export * from "./keybindings";
 export * from "./server";
