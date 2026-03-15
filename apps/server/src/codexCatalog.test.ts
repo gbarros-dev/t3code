@@ -113,6 +113,22 @@ describe("listCodexCustomPrompts", () => {
     });
   });
 
+  it("expands ~ in projectPath before resolving .codex/prompts", async () => {
+    const fakeHome = makeTempDir("t3code-codex-project-home-");
+    const projectRoot = path.join(fakeHome, "project");
+    const projectPromptsDir = path.join(projectRoot, ".codex", "prompts");
+    const codexHome = makeTempDir("t3code-codex-project-global-");
+    fs.mkdirSync(projectPromptsDir, { recursive: true });
+    fs.writeFileSync(path.join(projectPromptsDir, "review.md"), "Review $FILE", "utf8");
+    vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
+
+    await expect(
+      listCodexCustomPrompts({ homePath: codexHome, projectPath: "~/project" }),
+    ).resolves.toEqual({
+      prompts: [{ name: "review", content: "Review $FILE" }],
+    });
+  });
+
   it("uses CODEX_HOME when explicit input is missing", async () => {
     const codexHome = makeTempDir("t3code-codex-prompts-env-");
     const promptsDir = path.join(codexHome, "prompts");
@@ -148,6 +164,21 @@ describe("listCodexCustomPrompts", () => {
 
     await expect(listCodexCustomPrompts({ homePath: codexHome })).resolves.toEqual({
       prompts: [{ name: "good", content: "Good prompt" }],
+    });
+  });
+
+  it("accepts empty frontmatter blocks", async () => {
+    const codexHome = makeTempDir("t3code-codex-prompts-empty-frontmatter-");
+    const promptsDir = path.join(codexHome, "prompts");
+    fs.mkdirSync(promptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(promptsDir, "empty.md"),
+      ["---", "---", "Prompt body"].join("\n"),
+      "utf8",
+    );
+
+    await expect(listCodexCustomPrompts({ homePath: codexHome })).resolves.toEqual({
+      prompts: [{ name: "empty", content: "Prompt body" }],
     });
   });
 });

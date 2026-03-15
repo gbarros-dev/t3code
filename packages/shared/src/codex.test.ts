@@ -53,6 +53,17 @@ describe("getCustomPromptArgumentHint", () => {
       ),
     ).toBe("[args]");
   });
+
+  it("ignores escaped numeric placeholders when inferring positional args", () => {
+    expect(
+      getCustomPromptArgumentHint(
+        makePrompt({
+          name: "literal",
+          content: "Keep $$1 as text",
+        }),
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("buildCustomPromptInsertText", () => {
@@ -91,6 +102,16 @@ describe("expandCustomPromptInvocation", () => {
     });
     expect(expandCustomPromptInvocation("/prompts:summarize repo quick detail", [prompt])).toEqual({
       expanded: "Summarize repo using quick. Extra: repo quick detail",
+    });
+  });
+
+  it("preserves empty quoted positional arguments", () => {
+    const prompt = makePrompt({
+      name: "summarize",
+      content: "Summarize $1 using $2 and $3",
+    });
+    expect(expandCustomPromptInvocation('/prompts:summarize repo "" detail', [prompt])).toEqual({
+      expanded: "Summarize repo using  and detail",
     });
   });
 
@@ -133,5 +154,13 @@ describe("findNextCustomPromptArgCursor", () => {
 
     expect(findNextCustomPromptArgCursor(text, firstCursor)).toBe(secondCursor);
     expect(findNextCustomPromptArgCursor(text, secondCursor)).toBeNull();
+  });
+
+  it("finds the next arg after values ending with escaped backslashes", () => {
+    const text = '/prompts:review FILE="value\\\\" LEVEL=""';
+    const firstCursor = text.indexOf('FILE="') + 'FILE="'.length;
+    const secondCursor = text.indexOf('LEVEL="') + 'LEVEL="'.length;
+
+    expect(findNextCustomPromptArgCursor(text, firstCursor)).toBe(secondCursor);
   });
 });

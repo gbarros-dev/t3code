@@ -42,7 +42,7 @@ function parsePromptFrontmatter(fileContents: string): {
     return { content: normalized };
   }
 
-  const delimiterMatch = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(normalized);
+  const delimiterMatch = /^---\r?\n([\s\S]*?)\r?\n?---(?:\r?\n|$)/.exec(normalized);
   if (!delimiterMatch) {
     return null;
   }
@@ -92,7 +92,7 @@ function resolveProjectPromptDir(
   if (!projectPath) {
     return null;
   }
-  return path.resolve(projectPath, ".codex", "prompts");
+  return path.resolve(resolveHomePathSegment(projectPath), ".codex", "prompts");
 }
 
 async function readPromptDirectory(promptDir: string): Promise<CodexCustomPrompt[]> {

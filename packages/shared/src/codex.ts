@@ -28,12 +28,24 @@ function promptArgumentNames(content: string): string[] {
   return names;
 }
 
+function isEscapedDollarStart(content: string, index: number): boolean {
+  let consecutiveDollars = 0;
+  for (let cursor = index - 1; cursor >= 0 && content[cursor] === "$"; cursor -= 1) {
+    consecutiveDollars += 1;
+  }
+  return consecutiveDollars % 2 === 1;
+}
+
 function promptHasNumericPlaceholders(content: string): boolean {
   if (content.includes("$ARGUMENTS")) {
     return true;
   }
   for (let index = 0; index + 1 < content.length; index += 1) {
-    if (content[index] === "$" && /[1-9]/.test(content[index + 1] ?? "")) {
+    if (
+      content[index] === "$" &&
+      /[1-9]/.test(content[index + 1] ?? "") &&
+      !isEscapedDollarStart(content, index)
+    ) {
       return true;
     }
   }
@@ -68,44 +80,51 @@ function splitShlex(input: string): string[] {
   let inSingle = false;
   let inDouble = false;
   let escaped = false;
+  let tokenStarted = false;
 
   for (const char of input) {
     if (escaped) {
       current += char;
       escaped = false;
+      tokenStarted = true;
       continue;
     }
 
     if (!inSingle && char === "\\") {
       escaped = true;
+      tokenStarted = true;
       continue;
     }
 
     if (!inDouble && char === "'") {
       inSingle = !inSingle;
+      tokenStarted = true;
       continue;
     }
 
     if (!inSingle && char === '"') {
       inDouble = !inDouble;
+      tokenStarted = true;
       continue;
     }
 
     if (!inSingle && !inDouble && /\s/.test(char)) {
-      if (current) {
+      if (tokenStarted) {
         tokens.push(current);
         current = "";
+        tokenStarted = false;
       }
       continue;
     }
 
     current += char;
+    tokenStarted = true;
   }
 
   if (escaped) {
     current += "\\";
   }
-  if (current) {
+  if (tokenStarted) {
     tokens.push(current);
   }
 
@@ -210,6 +229,14 @@ function isCustomPromptCommandLine(line: string): boolean {
   return line.startsWith(`/${CUSTOM_PROMPTS_COMMAND_PREFIX}`);
 }
 
+function isEscapedQuote(input: string, quoteIndex: number): boolean {
+  let backslashCount = 0;
+  for (let index = quoteIndex - 1; index >= 0 && input[index] === "\\"; index -= 1) {
+    backslashCount += 1;
+  }
+  return backslashCount % 2 === 1;
+}
+
 function findCustomPromptArgRanges(line: string): Array<{ start: number; end: number }> {
   if (!isCustomPromptCommandLine(line)) {
     return [];
@@ -227,7 +254,7 @@ function findCustomPromptArgRanges(line: string): Array<{ start: number; end: nu
     let foundClosingQuote = false;
     while (end < normalized.length) {
       const char = normalized[end];
-      if (char === '"' && normalized[end - 1] !== "\\") {
+      if (char === '"' && !isEscapedQuote(normalized, end)) {
         foundClosingQuote = true;
         break;
       }
