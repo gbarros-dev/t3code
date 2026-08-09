@@ -1,11 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
+import type * as EffectAcpSchema from "effect-acp/schema";
 
 import {
   applyGrokAcpModelSelection,
   buildGrokAcpSpawnInput,
   resolveGrokAcpBaseModelId,
+  resolveGrokAuthMethodId,
 } from "./GrokAcpSupport.ts";
 
 describe("resolveGrokAcpBaseModelId", () => {
@@ -32,6 +34,72 @@ describe("buildGrokAcpSpawnInput", () => {
         GROK_OAUTH2_REFERRER: "t3code",
       },
     });
+  });
+});
+
+describe("resolveGrokAuthMethodId", () => {
+  const initializeResult = (input: {
+    readonly authMethodIds?: ReadonlyArray<string>;
+    readonly defaultAuthMethodId?: string;
+  }): EffectAcpSchema.InitializeResponse => ({
+    protocolVersion: 1,
+    ...(input.authMethodIds
+      ? {
+          authMethods: input.authMethodIds.map((id) => ({ id, name: id })),
+        }
+      : {}),
+    ...(input.defaultAuthMethodId
+      ? { _meta: { defaultAuthMethodId: input.defaultAuthMethodId } }
+      : {}),
+  });
+
+  it("uses the agent default when it differs from the process environment heuristic", () => {
+    expect(
+      resolveGrokAuthMethodId(
+        initializeResult({
+          authMethodIds: ["xai.api_key", "cached_token", "grok.com"],
+          defaultAuthMethodId: "cached_token",
+        }),
+        { XAI_API_KEY: "secret" },
+      ),
+    ).toBe("cached_token");
+  });
+
+  it("uses an advertised per-model API key method without a global API key", () => {
+    expect(
+      resolveGrokAuthMethodId(
+        initializeResult({
+          authMethodIds: ["xai.api_key", "grok.com"],
+          defaultAuthMethodId: "xai.api_key",
+        }),
+        {},
+      ),
+    ).toBe("xai.api_key");
+  });
+
+  it("never returns an unadvertised default or environment-derived method", () => {
+    expect(
+      resolveGrokAuthMethodId(
+        initializeResult({
+          authMethodIds: ["grok.com"],
+          defaultAuthMethodId: "cached_token",
+        }),
+        { XAI_API_KEY: "secret" },
+      ),
+    ).toBe("grok.com");
+  });
+
+  it("preserves the legacy environment fallback when auth methods are omitted", () => {
+    expect(resolveGrokAuthMethodId(initializeResult({}), {})).toBe("cached_token");
+    expect(
+      resolveGrokAuthMethodId(initializeResult({}), {
+        GROK_CODE_XAI_API_KEY: "legacy-secret",
+      }),
+    ).toBe("xai.api_key");
+  });
+
+  it("declines authentication when the agent explicitly advertises no methods", () => {
+    expect(resolveGrokAuthMethodId(initializeResult({ authMethodIds: [] }), {})).toBeUndefined();
   });
 });
 

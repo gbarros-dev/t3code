@@ -2,6 +2,7 @@ import { type GrokSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
 import * as Scope from "effect/Scope";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
@@ -12,6 +13,7 @@ import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import { makeXAiPromptCompletionRuntime } from "./XAiAcpExtension.ts";
 
 const GROK_API_KEY_ENV = "XAI_API_KEY";
+const GROK_LEGACY_API_KEY_ENV = "GROK_CODE_XAI_API_KEY";
 const GROK_OAUTH2_REFERRER_ENV = "GROK_OAUTH2_REFERRER";
 const T3_CODE_OAUTH_REFERRER = "t3code";
 const GROK_AUTH_METHOD_API_KEY = "xai.api_key";
@@ -45,10 +47,32 @@ export function buildGrokAcpSpawnInput(
   };
 }
 
-function resolveGrokAuthMethodId(environment: NodeJS.ProcessEnv | undefined): string {
-  return environment?.[GROK_API_KEY_ENV]?.trim()
+function resolveLegacyGrokAuthMethodId(environment: NodeJS.ProcessEnv | undefined): string {
+  return environment?.[GROK_API_KEY_ENV]?.trim() || environment?.[GROK_LEGACY_API_KEY_ENV]?.trim()
     ? GROK_AUTH_METHOD_API_KEY
     : GROK_AUTH_METHOD_CACHED_TOKEN;
+}
+
+export function resolveGrokAuthMethodId(
+  initializeResult: EffectAcpSchema.InitializeResponse,
+  environment: NodeJS.ProcessEnv | undefined,
+): string | undefined {
+  const legacyMethodId = resolveLegacyGrokAuthMethodId(environment);
+  if (initializeResult.authMethods === undefined) {
+    return legacyMethodId;
+  }
+
+  const advertisedMethodIds = initializeResult.authMethods
+    .map((method) => method.id.trim())
+    .filter((methodId) => methodId.length > 0);
+  const defaultMethodId = initializeResult._meta?.defaultAuthMethodId;
+  if (Predicate.isString(defaultMethodId) && advertisedMethodIds.includes(defaultMethodId.trim())) {
+    return defaultMethodId.trim();
+  }
+  if (advertisedMethodIds.includes(legacyMethodId)) {
+    return legacyMethodId;
+  }
+  return advertisedMethodIds[0];
 }
 
 export const makeGrokAcpRuntime = (
@@ -63,7 +87,8 @@ export const makeGrokAcpRuntime = (
       AcpSessionRuntime.layer({
         ...input,
         spawn: buildGrokAcpSpawnInput(input.grokSettings, input.cwd, input.environment),
-        authMethodId: resolveGrokAuthMethodId(input.environment),
+        authMethodId: (initializeResult) =>
+          resolveGrokAuthMethodId(initializeResult, input.environment),
       }).pipe(
         Layer.provide(
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),

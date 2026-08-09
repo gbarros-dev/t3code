@@ -57,6 +57,10 @@ export interface AcpSpawnInput {
   readonly env?: NodeJS.ProcessEnv;
 }
 
+export type AcpAuthMethodIdResolver = (
+  initializeResult: EffectAcpSchema.InitializeResponse,
+) => string | undefined;
+
 export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
   readonly cwd: string;
@@ -68,7 +72,7 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  readonly authMethodId: string | AcpAuthMethodIdResolver;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
@@ -541,8 +545,17 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
+      const authMethodId =
+        typeof options.authMethodId === "string"
+          ? options.authMethodId
+          : options.authMethodId(initializeResult);
+      if (!authMethodId) {
+        return yield* EffectAcpErrors.AcpRequestError.authRequired(
+          "ACP agent did not advertise an available authentication method.",
+        );
+      }
       const authenticatePayload = {
-        methodId: options.authMethodId,
+        methodId: authMethodId,
       } satisfies EffectAcpSchema.AuthenticateRequest;
 
       yield* runLoggedRequest(
