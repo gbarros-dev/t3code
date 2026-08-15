@@ -71,6 +71,7 @@ import {
   PreviewAutomationResponse,
   PreviewAutomationScrollInput,
   PreviewAutomationSnapshot,
+  PreviewAutomationSnapshotInclude,
   PreviewAutomationStatus,
   PreviewAutomationStreamEvent,
   PreviewAutomationTypeInput,
@@ -956,6 +957,18 @@ export const DesktopPreviewTabInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
 });
 
+export const DesktopPreviewAutomationSnapshotInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  include: Schema.optional(Schema.Array(PreviewAutomationSnapshotInclude)),
+});
+
+export const DesktopPreviewAutomationSetViewportInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  width: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  height: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  clear: Schema.optional(Schema.Boolean),
+});
+
 export const DesktopPreviewRegisterWebviewInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
   webContentsId: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -1168,7 +1181,14 @@ export interface DesktopPreviewBridge {
   };
   automation: {
     status: (tabId: string) => Promise<PreviewAutomationStatus>;
-    snapshot: (tabId: string) => Promise<PreviewAutomationSnapshot>;
+    snapshot: (
+      tabId: string,
+      include?: ReadonlyArray<PreviewAutomationSnapshotInclude>,
+    ) => Promise<PreviewAutomationSnapshot>;
+    setViewport: (
+      tabId: string,
+      input: { readonly width: number; readonly height: number } | { readonly clear: true },
+    ) => Promise<void>;
     click: (tabId: string, input: PreviewAutomationClickInput) => Promise<void>;
     type: (tabId: string, input: PreviewAutomationTypeInput) => Promise<void>;
     press: (tabId: string, input: PreviewAutomationPressInput) => Promise<void>;

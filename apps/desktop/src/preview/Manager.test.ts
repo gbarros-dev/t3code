@@ -2839,4 +2839,36 @@ describe("Preview automation diagnostics", () => {
     expect(JSON.stringify(error)).not.toContain(selector);
     expect("locator" in error).toBe(false);
   });
+
+  it("names hidden, disabled, and ambiguous click failures without leaking the locator", () => {
+    const selector = "role=button[name='target-secret']";
+    const hidden = new PreviewManager.PreviewAutomationTargetNotFoundError({
+      operation: "click",
+      tabId: "tab_1",
+      selectorKind: "locator",
+      selectorLength: selector.length,
+      failureKind: "hidden",
+    });
+    const disabled = new PreviewManager.PreviewAutomationTargetNotFoundError({
+      operation: "click",
+      tabId: "tab_1",
+      selectorKind: "locator",
+      selectorLength: selector.length,
+      failureKind: "disabled",
+    });
+    const ambiguous = new PreviewManager.PreviewAutomationTargetNotFoundError({
+      operation: "click",
+      tabId: "tab_1",
+      selectorKind: "locator",
+      selectorLength: selector.length,
+      failureKind: "ambiguous",
+      matchCount: 3,
+    });
+    expect(hidden.message).toContain("not visible");
+    expect(disabled.message).toContain("disabled");
+    expect(ambiguous.message).toContain("matched 3 elements");
+    expect(hidden.message).not.toContain("secret");
+    expect(disabled.message).not.toContain("secret");
+    expect(ambiguous.message).not.toContain("secret");
+  });
 });

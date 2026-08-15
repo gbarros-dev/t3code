@@ -9,6 +9,7 @@ import {
   type PreviewAutomationNavigateInput,
   type PreviewAutomationOpenInput,
   type PreviewAutomationResizeInput,
+  type PreviewAutomationSnapshotInput,
   type PreviewAutomationResizeResult,
   type PreviewAutomationSetColorSchemeInput,
   type PreviewAutomationSetColorSchemeResult,
@@ -177,6 +178,14 @@ const waitForRenderedViewport = async (
       const appliedSettingKey = webview?.getAttribute("data-preview-viewport-key") ?? null;
       const declaredViewport = readDeclaredViewport(webview);
       const renderedViewport = webview ? await readWebviewViewport(webview) : null;
+      if (
+        setting._tag !== "fill" &&
+        renderedViewport &&
+        Math.abs(renderedViewport.width - setting.width) <= 1 &&
+        Math.abs(renderedViewport.height - setting.height) <= 1
+      ) {
+        return renderedViewport;
+      }
       if (
         renderedViewport &&
         isPreviewViewportReady({
@@ -490,7 +499,17 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             const ready = await requireReadyTab();
             const input = request.input as PreviewAutomationResizeInput;
             const setting = resolvePreviewViewport(input);
-            const applied = await runBrowserViewportMutation(ready.runtimeTabId, async () => {
+            if (ready.bridge.automation.setViewport) {
+              if (setting._tag === "fill") {
+                await ready.bridge.automation.setViewport(ready.runtimeTabId, { clear: true });
+              } else {
+                await ready.bridge.automation.setViewport(ready.runtimeTabId, {
+                  width: setting.width,
+                  height: setting.height,
+                });
+              }
+            }
+            const persistViewport = async () => {
               const operationState = assertPreviewRuntimeCurrent(
                 threadRef,
                 ready.tabId,
@@ -515,6 +534,13 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 previousSetting,
                 serverEpoch: operationState.serverEpoch,
               };
+            };
+            const applied = await runBrowserViewportMutation(
+              ready.runtimeTabId,
+              persistViewport,
+            ).catch((error) => {
+              if (!ready.bridge.automation.setViewport) throw error;
+              return persistViewport();
             });
             let viewport: PreviewRenderedViewportSize;
             try {
@@ -577,7 +603,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "snapshot": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.snapshot(ready.runtimeTabId);
+            const input = request.input as PreviewAutomationSnapshotInput;
+            return await ready.bridge.automation.snapshot(ready.runtimeTabId, input.include);
           }
           case "click": {
             const ready = await requireReadyTab();

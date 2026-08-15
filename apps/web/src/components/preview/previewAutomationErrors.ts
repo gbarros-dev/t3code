@@ -134,6 +134,72 @@ export class PreviewAutomationTargetNotEditableHostError extends Schema.TaggedEr
   }
 }
 
+const targetNotFoundDiagnostics = (
+  cause: unknown,
+): {
+  readonly failureKind?: "missing" | "hidden" | "disabled" | "ambiguous";
+  readonly matchCount?: number;
+} | null => {
+  if (
+    typeof cause !== "object" ||
+    cause === null ||
+    !("_tag" in cause) ||
+    cause._tag !== "PreviewAutomationTargetNotFoundError"
+  ) {
+    return null;
+  }
+  const failureKind =
+    "failureKind" in cause &&
+    (cause.failureKind === "missing" ||
+      cause.failureKind === "hidden" ||
+      cause.failureKind === "disabled" ||
+      cause.failureKind === "ambiguous")
+      ? cause.failureKind
+      : undefined;
+  const matchCount =
+    "matchCount" in cause &&
+    typeof cause.matchCount === "number" &&
+    Number.isInteger(cause.matchCount) &&
+    cause.matchCount >= 0
+      ? cause.matchCount
+      : undefined;
+  return {
+    ...(failureKind === undefined ? {} : { failureKind }),
+    ...(matchCount === undefined ? {} : { matchCount }),
+  };
+};
+
+export class PreviewAutomationTargetNotFoundHostError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotFoundHostError>()(
+  "PreviewAutomationTargetNotFoundHostError",
+  {
+    requestId: TrimmedNonEmptyString,
+    operation: PreviewAutomationOperation,
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+    tabId: Schema.NullOr(PreviewTabId),
+    failureKind: Schema.optional(Schema.Literals(["missing", "hidden", "disabled", "ambiguous"])),
+    matchCount: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  },
+) {
+  get responseTag() {
+    return "PreviewAutomationExecutionError" as const;
+  }
+
+  override get message(): string {
+    const tab = this.tabId ?? "unassigned";
+    if (this.failureKind === "hidden") {
+      return `Preview automation ${this.operation} request ${this.requestId} found a target in tab ${tab}, but it is not visible.`;
+    }
+    if (this.failureKind === "disabled") {
+      return `Preview automation ${this.operation} request ${this.requestId} found a target in tab ${tab}, but it is disabled.`;
+    }
+    if (this.failureKind === "ambiguous") {
+      return `Preview automation ${this.operation} request ${this.requestId} matched ${this.matchCount ?? 0} elements in tab ${tab}.`;
+    }
+    return `Preview automation ${this.operation} request ${this.requestId} could not find a target in tab ${tab}.`;
+  }
+}
+
 const targetNotEditableDiagnostics = (
   cause: unknown,
 ): {
@@ -183,6 +249,17 @@ export class PreviewAutomationOperationError extends Schema.TaggedErrorClass<Pre
     input: PreviewAutomationOperationContext & { readonly cause: unknown },
   ): PreviewAutomationHostError {
     if (isPreviewAutomationHostError(input.cause)) return input.cause;
+    const notFound = targetNotFoundDiagnostics(input.cause);
+    if (notFound) {
+      return new PreviewAutomationTargetNotFoundHostError({
+        requestId: input.requestId,
+        operation: input.operation,
+        environmentId: input.environmentId,
+        threadId: input.threadId,
+        tabId: input.tabId,
+        ...notFound,
+      });
+    }
     const diagnostics = targetNotEditableDiagnostics(input.cause);
     return diagnostics
       ? new PreviewAutomationTargetNotEditableHostError({
@@ -211,6 +288,7 @@ export const PreviewAutomationHostError = Schema.Union([
   PreviewAutomationViewportTimeoutError,
   PreviewAutomationTargetUnavailableError,
   PreviewAutomationRecordingNotActiveError,
+  PreviewAutomationTargetNotFoundHostError,
   PreviewAutomationTargetNotEditableHostError,
   PreviewAutomationOperationError,
 ]);

@@ -2,6 +2,8 @@ import {
   DesktopPreviewAnnotationThemeInputSchema,
   DesktopPreviewArtifactInputSchema,
   DesktopPreviewAutomationClickInputSchema,
+  DesktopPreviewAutomationSetViewportInputSchema,
+  DesktopPreviewAutomationSnapshotInputSchema,
   DesktopPreviewAutomationEvaluateInputSchema,
   DesktopPreviewAutomationPressInputSchema,
   DesktopPreviewAutomationScrollInputSchema,
@@ -276,11 +278,31 @@ export const automationStatus = DesktopIpc.makeIpcMethod({
 
 export const automationSnapshot = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL,
-  payload: DesktopPreviewTabInputSchema,
+  payload: DesktopPreviewAutomationSnapshotInputSchema,
   result: PreviewAutomationSnapshot,
-  handler: Effect.fn("desktop.ipc.preview.automationSnapshot")(function* ({ tabId }) {
+  handler: Effect.fn("desktop.ipc.preview.automationSnapshot")(function* ({ tabId, include }) {
     const manager = yield* PreviewManager.PreviewManager;
-    return yield* manager.automationSnapshot(tabId);
+    return yield* manager.automationSnapshot(tabId, include ?? []);
+  }),
+});
+
+export const automationSetViewport = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_AUTOMATION_SET_VIEWPORT_CHANNEL,
+  payload: DesktopPreviewAutomationSetViewportInputSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.automationSetViewport")(function* ({
+    tabId,
+    width,
+    height,
+    clear,
+  }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    yield* manager.automationSetViewport(
+      tabId,
+      clear === true || width === undefined || height === undefined
+        ? { clear: true }
+        : { width, height },
+    );
   }),
 });
 
@@ -381,6 +403,7 @@ export const methods = [
   closePictureInPicture,
   automationStatus,
   automationSnapshot,
+  automationSetViewport,
   automationClick,
   automationType,
   automationPress,
