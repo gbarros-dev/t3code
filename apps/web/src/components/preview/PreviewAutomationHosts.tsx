@@ -577,12 +577,12 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                   });
                   if (rollback._tag !== "Failure") {
                     updatePreviewServerSnapshot(threadRef, rollback.value);
+                    await applyPreviewGuestViewport(
+                      setViewport,
+                      ready.runtimeTabId,
+                      applied.previousSetting,
+                    ).catch(() => undefined);
                   }
-                  await applyPreviewGuestViewport(
-                    setViewport,
-                    ready.runtimeTabId,
-                    applied.previousSetting,
-                  ).catch(() => undefined);
                 }
               });
               throw cause;
