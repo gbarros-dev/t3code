@@ -15,29 +15,27 @@ describe("PreviewAutomationOperationError", () => {
   it("maps typed not-found failures to a visible/disabled/ambiguous reason", () => {
     const hidden = PreviewAutomationOperationError.fromCause({
       ...context,
+      cause: { _tag: "PreviewAutomationTargetHiddenError" },
+    });
+    const disabled = PreviewAutomationOperationError.fromCause({
+      ...context,
+      cause: { _tag: "PreviewAutomationTargetDisabledError" },
+    });
+    const ambiguous = PreviewAutomationOperationError.fromCause({
+      ...context,
+      cause: { _tag: "PreviewAutomationTargetAmbiguousError", matchCount: 3 },
+    });
+    const legacyHidden = PreviewAutomationOperationError.fromCause({
+      ...context,
       cause: {
         _tag: "PreviewAutomationTargetNotFoundError",
         failureKind: "hidden",
       },
     });
-    const disabled = PreviewAutomationOperationError.fromCause({
-      ...context,
-      cause: {
-        _tag: "PreviewAutomationTargetNotFoundError",
-        failureKind: "disabled",
-      },
-    });
-    const ambiguous = PreviewAutomationOperationError.fromCause({
-      ...context,
-      cause: {
-        _tag: "PreviewAutomationTargetNotFoundError",
-        failureKind: "ambiguous",
-        matchCount: 3,
-      },
-    });
     expect(hidden.message).toContain("not visible");
     expect(disabled.message).toContain("disabled");
     expect(ambiguous.message).toContain("matched 3 elements");
+    expect(legacyHidden.message).toContain("not visible");
     expect(hidden.message).not.toContain("secret");
     expect(disabled.message).not.toContain("secret");
     expect(ambiguous.message).not.toContain("secret");

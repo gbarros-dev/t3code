@@ -3075,7 +3075,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
     }
     if ("notFound" in point) {
-      return yield* new PreviewAutomationTargetNotFoundError({
+      return yield* raiseAutomationTargetLookupError({
         operation: "click",
         tabId,
         ...automationSelectorDiagnostics(input),
@@ -3745,34 +3745,84 @@ export class PreviewAutomationEvaluationError extends Schema.TaggedErrorClass<Pr
   }
 }
 
+const PreviewAutomationTargetLookupFields = {
+  operation: Schema.String,
+  tabId: Schema.String,
+  selectorKind: PreviewAutomationSelectorKind,
+  selectorLength: Schema.optionalKey(Schema.Number),
+};
+
 export class PreviewAutomationTargetNotFoundError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotFoundError>()(
   "PreviewAutomationTargetNotFoundError",
+  PreviewAutomationTargetLookupFields,
+) {
+  override get message(): string {
+    const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
+    return `Preview automation ${this.operation} could not find ${target} in tab ${this.tabId}`;
+  }
+}
+
+export class PreviewAutomationTargetHiddenError extends Schema.TaggedErrorClass<PreviewAutomationTargetHiddenError>()(
+  "PreviewAutomationTargetHiddenError",
+  PreviewAutomationTargetLookupFields,
+) {
+  override get message(): string {
+    const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
+    return `Preview automation ${this.operation} found ${target} in tab ${this.tabId}, but it is not visible`;
+  }
+}
+
+export class PreviewAutomationTargetDisabledError extends Schema.TaggedErrorClass<PreviewAutomationTargetDisabledError>()(
+  "PreviewAutomationTargetDisabledError",
+  PreviewAutomationTargetLookupFields,
+) {
+  override get message(): string {
+    const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
+    return `Preview automation ${this.operation} found ${target} in tab ${this.tabId}, but it is disabled`;
+  }
+}
+
+export class PreviewAutomationTargetAmbiguousError extends Schema.TaggedErrorClass<PreviewAutomationTargetAmbiguousError>()(
+  "PreviewAutomationTargetAmbiguousError",
   {
-    operation: Schema.String,
-    tabId: Schema.String,
-    selectorKind: PreviewAutomationSelectorKind,
-    selectorLength: Schema.optionalKey(Schema.Number),
-    failureKind: Schema.optionalKey(
-      Schema.Literals(["missing", "hidden", "disabled", "ambiguous"]),
-    ),
-    matchCount: Schema.optionalKey(Schema.Number),
+    ...PreviewAutomationTargetLookupFields,
+    matchCount: Schema.Number,
   },
 ) {
   override get message(): string {
     const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
-    if (this.failureKind === "hidden") {
-      return `Preview automation ${this.operation} found ${target} in tab ${this.tabId}, but it is not visible`;
-    }
-    if (this.failureKind === "disabled") {
-      return `Preview automation ${this.operation} found ${target} in tab ${this.tabId}, but it is disabled`;
-    }
-    if (this.failureKind === "ambiguous") {
-      const count = this.matchCount ?? 0;
-      return `Preview automation ${this.operation} matched ${count} elements for ${target} in tab ${this.tabId}`;
-    }
-    return `Preview automation ${this.operation} could not find ${target} in tab ${this.tabId}`;
+    return `Preview automation ${this.operation} matched ${this.matchCount} elements for ${target} in tab ${this.tabId}`;
   }
 }
+
+const raiseAutomationTargetLookupError = (input: {
+  readonly operation: string;
+  readonly tabId: string;
+  readonly selectorKind: PreviewAutomationSelectorKind;
+  readonly selectorLength?: number;
+  readonly failureKind?: "missing" | "hidden" | "disabled" | "ambiguous";
+  readonly matchCount?: number;
+}) => {
+  const shared = {
+    operation: input.operation,
+    tabId: input.tabId,
+    selectorKind: input.selectorKind,
+    ...(input.selectorLength === undefined ? {} : { selectorLength: input.selectorLength }),
+  };
+  if (input.failureKind === "hidden") {
+    return new PreviewAutomationTargetHiddenError(shared);
+  }
+  if (input.failureKind === "disabled") {
+    return new PreviewAutomationTargetDisabledError(shared);
+  }
+  if (input.failureKind === "ambiguous") {
+    return new PreviewAutomationTargetAmbiguousError({
+      ...shared,
+      matchCount: input.matchCount ?? 0,
+    });
+  }
+  return new PreviewAutomationTargetNotFoundError(shared);
+};
 
 export class PreviewAutomationTargetNotEditableError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotEditableError>()(
   "PreviewAutomationTargetNotEditableError",
@@ -3889,6 +3939,9 @@ export const PreviewManagerError = Schema.Union([
   PreviewAutomationDebuggerAttachedError,
   PreviewAutomationEvaluationError,
   PreviewAutomationTargetNotFoundError,
+  PreviewAutomationTargetHiddenError,
+  PreviewAutomationTargetDisabledError,
+  PreviewAutomationTargetAmbiguousError,
   PreviewAutomationTargetNotEditableError,
   PreviewAutomationCoordinatesOutsideViewportError,
   PreviewAutomationInvalidSelectorError,

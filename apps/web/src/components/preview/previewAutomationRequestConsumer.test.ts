@@ -295,8 +295,7 @@ describe("previewAutomationRequestConsumer", () => {
     expect(
       serializePreviewAutomationError(
         {
-          _tag: "PreviewAutomationTargetNotFoundError",
-          failureKind: "hidden",
+          _tag: "PreviewAutomationTargetHiddenError",
           selector: "role=button[name='target-secret']",
         },
         {
@@ -317,7 +316,6 @@ describe("previewAutomationRequestConsumer", () => {
         environmentId: "environment-1",
         threadId: "thread-1",
         tabId: "tab-1",
-        failureKind: "hidden",
       },
     });
     expect(
