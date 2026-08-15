@@ -962,12 +962,17 @@ export const DesktopPreviewAutomationSnapshotInputSchema = Schema.Struct({
   include: Schema.optional(Schema.Array(PreviewAutomationSnapshotInclude)),
 });
 
-export const DesktopPreviewAutomationSetViewportInputSchema = Schema.Struct({
-  tabId: DesktopPreviewTabIdSchema,
-  width: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
-  height: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
-  clear: Schema.optional(Schema.Boolean),
-});
+export const DesktopPreviewAutomationSetViewportInputSchema = Schema.Union([
+  Schema.Struct({
+    tabId: DesktopPreviewTabIdSchema,
+    width: Schema.Int.check(Schema.isGreaterThan(0)),
+    height: Schema.Int.check(Schema.isGreaterThan(0)),
+  }),
+  Schema.Struct({
+    tabId: DesktopPreviewTabIdSchema,
+    clear: Schema.Literal(true),
+  }),
+]);
 
 export const DesktopPreviewRegisterWebviewInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,

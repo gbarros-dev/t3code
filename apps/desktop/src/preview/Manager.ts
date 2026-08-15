@@ -3489,7 +3489,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   if (element.getAttribute("role") === "dialog") {
                     const slot = element.getAttribute("data-slot") || "";
                     if (slot.includes("trigger")) return false;
-                    return (element.innerText || "").trim().length > 0;
                   }
                   return true;
                 })()`

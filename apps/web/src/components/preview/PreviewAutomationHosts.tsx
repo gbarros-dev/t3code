@@ -48,6 +48,7 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { previewBridge } from "./previewBridge";
+import { applyPreviewGuestViewport } from "./previewGuestViewport";
 import {
   PreviewAutomationOperationError,
   PreviewAutomationOverlayTimeoutError,
@@ -499,16 +500,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             const ready = await requireReadyTab();
             const input = request.input as PreviewAutomationResizeInput;
             const setting = resolvePreviewViewport(input);
-            if (ready.bridge.automation.setViewport) {
-              if (setting._tag === "fill") {
-                await ready.bridge.automation.setViewport(ready.runtimeTabId, { clear: true });
-              } else {
-                await ready.bridge.automation.setViewport(ready.runtimeTabId, {
-                  width: setting.width,
-                  height: setting.height,
-                });
-              }
-            }
+            const setViewport = ready.bridge.automation.setViewport;
             const persistViewport = async () => {
               const operationState = assertPreviewRuntimeCurrent(
                 threadRef,
@@ -530,18 +522,22 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 return raiseAtomCommandFailure(result);
               }
               updatePreviewServerSnapshot(threadRef, result.value);
+              try {
+                await applyPreviewGuestViewport(setViewport, ready.runtimeTabId, setting);
+              } catch (error) {
+                await applyPreviewGuestViewport(
+                  setViewport,
+                  ready.runtimeTabId,
+                  previousSetting,
+                ).catch(() => undefined);
+                throw error;
+              }
               return {
                 previousSetting,
                 serverEpoch: operationState.serverEpoch,
               };
             };
-            const applied = await runBrowserViewportMutation(
-              ready.runtimeTabId,
-              persistViewport,
-            ).catch((error) => {
-              if (!ready.bridge.automation.setViewport) throw error;
-              return persistViewport();
-            });
+            const applied = await runBrowserViewportMutation(ready.runtimeTabId, persistViewport);
             let viewport: PreviewRenderedViewportSize;
             try {
               viewport = await waitForRenderedViewport(
@@ -582,6 +578,11 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                   if (rollback._tag !== "Failure") {
                     updatePreviewServerSnapshot(threadRef, rollback.value);
                   }
+                  await applyPreviewGuestViewport(
+                    setViewport,
+                    ready.runtimeTabId,
+                    applied.previousSetting,
+                  ).catch(() => undefined);
                 }
               });
               throw cause;

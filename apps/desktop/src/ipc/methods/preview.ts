@@ -290,18 +290,11 @@ export const automationSetViewport = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_AUTOMATION_SET_VIEWPORT_CHANNEL,
   payload: DesktopPreviewAutomationSetViewportInputSchema,
   result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.preview.automationSetViewport")(function* ({
-    tabId,
-    width,
-    height,
-    clear,
-  }) {
+  handler: Effect.fn("desktop.ipc.preview.automationSetViewport")(function* (input) {
     const manager = yield* PreviewManager.PreviewManager;
     yield* manager.automationSetViewport(
-      tabId,
-      clear === true || width === undefined || height === undefined
-        ? { clear: true }
-        : { width, height },
+      input.tabId,
+      "clear" in input ? { clear: true } : { width: input.width, height: input.height },
     );
   }),
 });
