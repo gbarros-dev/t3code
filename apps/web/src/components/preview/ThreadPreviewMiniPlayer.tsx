@@ -289,7 +289,10 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
                       ? "Close popped-out preview"
                       : "Pop preview into separate window"
                   }
-                  disabled={!desktopOverlay?.hasWebContents || isUnreachable}
+                  disabled={
+                    !desktopOverlay?.hasWebContents ||
+                    (isUnreachable && !desktopOverlay.pictureInPicture)
+                  }
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={toggleNativePictureInPicture}
                 />
