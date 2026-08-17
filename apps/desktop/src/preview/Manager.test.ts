@@ -3995,6 +3995,36 @@ describe("Preview automation snapshots", () => {
     }),
   };
 
+  const mockAutomationWebContents = (
+    sendCommand: ReturnType<typeof vi.fn>,
+    capturePage: () => Promise<typeof snapshotImage>,
+  ) =>
+    ({
+      id: 42,
+      isDestroyed: () => false,
+      getType: () => "webview",
+      getURL: () => "https://example.com",
+      getTitle: () => "Example",
+      isLoading: () => false,
+      isDevToolsOpened: () => false,
+      getZoomFactor: () => 1,
+      setZoomFactor: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      ipc: { on: vi.fn(), off: vi.fn() },
+      send: webviewSend,
+      navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+      setWindowOpenHandler: vi.fn(),
+      capturePage,
+      debugger: {
+        isAttached: () => false,
+        attach: vi.fn(),
+        sendCommand,
+        on: vi.fn(),
+        off: vi.fn(),
+      },
+    }) as never;
+
   effectIt.effect("omits ax, console, and network unless include asks", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -4007,16 +4037,7 @@ describe("Preview automation snapshots", () => {
           }
           return undefined;
         });
-        fromId.mockReturnValue({
-          ...makeTestPreviewWebContents(vi.fn(async () => snapshotImage)),
-          debugger: {
-            isAttached: () => false,
-            attach: vi.fn(),
-            sendCommand,
-            on: vi.fn(),
-            off: vi.fn(),
-          },
-        } as never);
+        fromId.mockReturnValue(mockAutomationWebContents(sendCommand, async () => snapshotImage));
 
         yield* manager.createTab("tab_snapshot");
         yield* manager.registerWebview("tab_snapshot", 42);
@@ -4049,20 +4070,11 @@ describe("Preview automation snapshots", () => {
           }
           return undefined;
         });
-        fromId.mockReturnValue({
-          ...makeTestPreviewWebContents(
-            vi.fn(async () => {
-              throw new Error("capturePage failed");
-            }),
-          ),
-          debugger: {
-            isAttached: () => false,
-            attach: vi.fn(),
-            sendCommand,
-            on: vi.fn(),
-            off: vi.fn(),
-          },
-        } as never);
+        fromId.mockReturnValue(
+          mockAutomationWebContents(sendCommand, async () => {
+            throw new Error("capturePage failed");
+          }),
+        );
 
         yield* manager.createTab("tab_snapshot_fail");
         yield* manager.registerWebview("tab_snapshot_fail", 42);
@@ -4088,16 +4100,7 @@ describe("Preview automation snapshots", () => {
           }
           return undefined;
         });
-        fromId.mockReturnValue({
-          ...makeTestPreviewWebContents(vi.fn(async () => snapshotImage)),
-          debugger: {
-            isAttached: () => false,
-            attach: vi.fn(),
-            sendCommand,
-            on: vi.fn(),
-            off: vi.fn(),
-          },
-        } as never);
+        fromId.mockReturnValue(mockAutomationWebContents(sendCommand, async () => snapshotImage));
 
         yield* manager.createTab("tab_wait");
         yield* manager.registerWebview("tab_wait", 42);
