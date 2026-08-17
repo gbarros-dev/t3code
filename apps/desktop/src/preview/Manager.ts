@@ -3545,7 +3545,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           };
           const seen = new Set();
           const elements = Array.from(document.querySelectorAll(
-            "a[href],button,input,textarea,select,[role],[tabindex],[role=row],tr,[role=gridcell]"
+            "a[href],button,input,textarea,select,[role],[tabindex],[role=row],tr,[role=gridcell],div,td"
           )).filter((element) => {
             if (!visible(element) || !clickable(element) || seen.has(element)) return false;
             seen.add(element);
@@ -3569,7 +3569,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             url: location.href,
             title: document.title,
             loading: document.readyState !== "complete",
-            visibleText: ((main && main.innerText) || document.body?.innerText || "").slice(0, ${MAX_VISIBLE_TEXT_LENGTH}),
+            visibleText: (main ? main.innerText : document.body?.innerText || "").slice(0, ${MAX_VISIBLE_TEXT_LENGTH}),
             interactiveElements: elements
           };
         })()`,
@@ -3588,18 +3588,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         },
         () => wc.capturePage(),
       ).pipe(
-        Effect.catch(() =>
+        Effect.catch((captureFailure) =>
           send("Page.captureScreenshot", { format: "png" }).pipe(
-            Effect.map((result) => {
-              const data =
-                result !== null &&
-                typeof result === "object" &&
-                "data" in result &&
-                typeof result.data === "string"
-                  ? result.data
-                  : "";
-              return nativeImage.createFromBuffer(Buffer.from(data, "base64"));
-            }),
+            Effect.flatMap((result) =>
+              result !== null &&
+              typeof result === "object" &&
+              "data" in result &&
+              typeof result.data === "string"
+                ? Effect.succeed(nativeImage.createFromBuffer(Buffer.from(result.data, "base64")))
+                : Effect.fail(captureFailure),
+            ),
           ),
         ),
       );
