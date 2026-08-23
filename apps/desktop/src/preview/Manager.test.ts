@@ -515,6 +515,8 @@ describe("PreviewManager", () => {
           isLoading: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
+          setAudioMuted: vi.fn(),
+          isCurrentlyAudible: () => false,
           loadURL: vi.fn(async () => undefined),
           on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
             listeners.set(event, listener);
