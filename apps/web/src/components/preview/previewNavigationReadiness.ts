@@ -51,7 +51,10 @@ export async function waitForNavigationReadiness(
   if (targetReadiness === "none") return;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
-    assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, { operation, requestId });
+    const state = assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, {
+      operation,
+      requestId,
+    });
     if (targetReadiness === "domContentLoaded") {
       const readyState = await previewBridge.automation.evaluate(runtimeTabId, {
         expression: "document.readyState",
@@ -60,9 +63,18 @@ export async function waitForNavigationReadiness(
     } else {
       const status = await previewBridge.automation.status(runtimeTabId);
       if (!status.loading) {
-        // LoadFailed reports available:false with a live guest. Attachment is
-        // waitForDesktopOverlay's job; this wait is page-load completion.
-        return;
+        if (status.available) return;
+        // LoadFailed reports available:false with a live guest. A detached
+        // webContents is not a finished load.
+        if (state.desktopByTabId[tabId]?.hasWebContents) return;
+        throw new PreviewAutomationTargetUnavailableError({
+          requestId,
+          operation,
+          environmentId: threadRef.environmentId,
+          threadId: threadRef.threadId,
+          tabId,
+          bridgeAvailable: Boolean(previewBridge),
+        });
       }
     }
     await new Promise<void>((resolve) => window.setTimeout(resolve, 50));

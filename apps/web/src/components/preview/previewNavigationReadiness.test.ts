@@ -67,6 +67,9 @@ describe("waitForNavigationReadiness", () => {
       sessions: {
         [tabId]: { tabId },
       },
+      desktopByTabId: {
+        [tabId]: { hasWebContents: true },
+      },
     });
     vi.mocked(previewBridge!.automation.status).mockResolvedValue({
       available: false,
@@ -88,5 +91,43 @@ describe("waitForNavigationReadiness", () => {
         2_000,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("rejects a detached guest instead of treating it as a finished load", async () => {
+    const threadRef = {
+      environmentId: EnvironmentId.make("environment-2"),
+      threadId: ThreadId.make("thread-1"),
+    };
+    const tabId = "tab_1";
+    const runtimeTabId = previewRuntimeTabId(threadRef, "epoch-1", tabId);
+    mocks.readThreadPreviewState.mockReturnValue({
+      serverEpoch: "epoch-1",
+      sessions: {
+        [tabId]: { tabId },
+      },
+      desktopByTabId: {
+        [tabId]: { hasWebContents: false },
+      },
+    });
+    vi.mocked(previewBridge!.automation.status).mockResolvedValue({
+      available: false,
+      visible: true,
+      tabId,
+      url: "http://localhost:5173/",
+      title: null,
+      loading: false,
+    });
+
+    await expect(
+      waitForNavigationReadiness(
+        threadRef,
+        "request-1",
+        tabId,
+        runtimeTabId,
+        "navigate",
+        "load",
+        2_000,
+      ),
+    ).rejects.toBeInstanceOf(PreviewAutomationTargetUnavailableError);
   });
 });
