@@ -59,7 +59,11 @@ export async function waitForNavigationReadiness(
       if (readyState === "interactive" || readyState === "complete") return;
     } else {
       const status = await previewBridge.automation.status(runtimeTabId);
-      if (status.available && !status.loading) return;
+      if (!status.loading) {
+        // LoadFailed reports available:false with a live guest. Attachment is
+        // waitForDesktopOverlay's job; this wait is page-load completion.
+        return;
+      }
     }
     await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
   }
