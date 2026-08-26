@@ -2515,4 +2515,64 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       McpProviderSession.clearMcpProviderSession(threadId);
     }),
   );
+
+  it.effect("prefixes browser instructions after an attachments-only first turn", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-browser-image-first");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-browser-image-first-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+      const { attachmentsDir } = yield* Effect.service(ServerConfig);
+      const attachmentId = "browser-prefix-shot";
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(attachmentsDir, { recursive: true });
+        await NodeFSP.writeFile(NodePath.join(attachmentsDir, `${attachmentId}.png`), "pixels");
+      });
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("grok-browser-image-first-environment"),
+        threadId,
+        providerSessionId: "grok-browser-image-first-provider-session",
+        providerInstanceId: ProviderInstanceId.make("grok-browser-image-first-instance"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test-token",
+      });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "",
+        attachments: [
+          {
+            type: "image",
+            id: attachmentId,
+            name: "shot.png",
+            mimeType: "image/png",
+            sizeBytes: 6,
+          },
+        ],
+      });
+      yield* adapter.sendTurn({ threadId, input: "what is this", attachments: [] });
+      yield* waitForFileContent(requestLogPath, 80, '"method":"session/prompt"');
+
+      const prompts = promptTextsFromLog(
+        yield* Effect.promise(() => readJsonLines(requestLogPath)),
+      );
+      assert.equal(prompts.length, 2);
+      assert.equal(prompts[0], HOST_BROWSER_TOOL_INSTRUCTIONS.trim());
+      assert.equal(prompts[1], "what is this");
+
+      yield* adapter.stopSession(threadId);
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
 });

@@ -995,16 +995,20 @@ export function makeCursorAdapter(
           }
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
-          const rawPrompt = input.input?.trim() ?? "";
+          const userText = input.input?.trim() ?? "";
           const includeBrowserTools =
             ctx.browserToolsAttached &&
             ctx.createdViaNewSession &&
             !ctx.browserInstructionsPrefixed &&
             steeringTurnId === undefined &&
-            (rawPrompt.length > 0 || (input.attachments?.length ?? 0) > 0);
-          if (rawPrompt.length > 0 || includeBrowserTools) {
+            (userText.length > 0 || (input.attachments?.length ?? 0) > 0);
+          if (userText.length > 0 || includeBrowserTools) {
             let cursorSkillNames = ctx.cursorSkillNames;
-            if (rawPrompt.length > 0 && hasCursorSkillMention(rawPrompt) && cursorSkillNames === undefined) {
+            if (
+              userText.length > 0 &&
+              hasCursorSkillMention(userText) &&
+              cursorSkillNames === undefined
+            ) {
               const skills = yield* discoverCursorSkills(
                 ctx.session.cwd,
                 options?.environment,
@@ -1020,8 +1024,8 @@ export function makeCursorAdapter(
               ctx.cursorSkillNames = cursorSkillNames;
             }
             const prompt = cursorSkillNames
-              ? rewriteCursorSkillMentions(rawPrompt, cursorSkillNames)
-              : rawPrompt;
+              ? rewriteCursorSkillMentions(userText, cursorSkillNames)
+              : userText;
             promptParts.push({
               type: "text",
               text: prefixHostBrowserToolInstructions(prompt, { includeBrowserTools }),

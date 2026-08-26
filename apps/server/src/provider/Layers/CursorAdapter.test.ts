@@ -1625,4 +1625,68 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       McpProviderSession.clearMcpProviderSession(threadId);
     }),
   );
+
+  it.effect("prefixes browser instructions after an attachments-only first turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-browser-image-first");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-acp-browser-image-first-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const argvLogPath = NodePath.join(tempDir, "argv.txt");
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+      const { attachmentsDir } = yield* Effect.service(ServerConfig);
+      const attachmentId = "browser-prefix-shot";
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(attachmentsDir, { recursive: true });
+        await NodeFSP.writeFile(NodePath.join(attachmentsDir, `${attachmentId}.png`), "pixels");
+      });
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("cursor-browser-image-first-environment"),
+        threadId,
+        providerSessionId: "cursor-browser-image-first-provider-session",
+        providerInstanceId: ProviderInstanceId.make("cursor-browser-image-first-instance"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test-token",
+      });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "",
+        attachments: [
+          {
+            type: "image",
+            id: attachmentId,
+            name: "shot.png",
+            mimeType: "image/png",
+            sizeBytes: 6,
+          },
+        ],
+      });
+      yield* adapter.sendTurn({ threadId, input: "what is this", attachments: [] });
+
+      const prompts = promptTextsFromLog(
+        yield* Effect.promise(() => readJsonLines(requestLogPath)),
+      );
+      assert.equal(prompts.length, 2);
+      assert.equal(prompts[0], HOST_BROWSER_TOOL_INSTRUCTIONS.trim());
+      assert.equal(prompts[1], "what is this");
+
+      yield* adapter.stopSession(threadId);
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
 });

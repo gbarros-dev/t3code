@@ -24,5 +24,8 @@ describe("HOST_BROWSER_TOOL_INSTRUCTIONS", () => {
     expect(
       prefixHostBrowserToolInstructions("open the app", { includeBrowserTools: true }),
     ).toContain(HOST_BROWSER_TOOL_INSTRUCTIONS.trim());
+    expect(prefixHostBrowserToolInstructions("", { includeBrowserTools: true })).toBe(
+      HOST_BROWSER_TOOL_INSTRUCTIONS.trim(),
+    );
   });
 });
