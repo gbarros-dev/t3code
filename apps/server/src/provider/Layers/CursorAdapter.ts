@@ -67,6 +67,7 @@ import {
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import { applyCursorAcpModelSelection, makeCursorAcpRuntime } from "../acp/CursorAcpSupport.ts";
+import { prefixHostBrowserToolInstructions } from "../HostBrowserToolInstructions.ts";
 import {
   CursorAskQuestionRequest,
   CursorCreatePlanRequest,
@@ -144,6 +145,12 @@ interface CursorSessionContext {
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
+  /** False when this process loaded an existing ACP session. */
+  readonly createdViaNewSession: boolean;
+  /** True when the product-native preview MCP server was attached at session start. */
+  readonly browserToolsAttached: boolean;
+  /** True after the first successful prompt that carried in-app browser steering. */
+  browserInstructionsPrefixed: boolean;
   stopped: boolean;
 }
 
@@ -788,6 +795,9 @@ export function makeCursorAdapter(
             activeTurnId: undefined,
             cursorSkillNames: undefined,
             promptsInFlight: 0,
+            createdViaNewSession: resumeSessionId === undefined,
+            browserToolsAttached: mcpSession !== undefined,
+            browserInstructionsPrefixed: false,
             stopped: false,
           };
 
@@ -924,16 +934,25 @@ export function makeCursorAdapter(
 
     const sendTurn: CursorAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const ctx = yield* requireSession(input.threadId);
-        // A sendTurn while a prompt is in flight is a steer: the agent folds
-        // the new prompt into the ongoing work, so the active turn id is
-        // reused instead of opening a new turn.
-        const steeringTurnId = ctx.promptsInFlight > 0 ? ctx.activeTurnId : undefined;
-        const turnId = steeringTurnId ?? TurnId.make(yield* randomUUIDv4);
-        // Count this prompt immediately so a superseded in-flight prompt
-        // resolving from here on does not settle the turn; the matching
-        // decrement is the `ensuring` below.
-        ctx.promptsInFlight += 1;
+        const { ctx, steeringTurnId, turnId } = yield* withThreadLock(
+          input.threadId,
+          Effect.gen(function* () {
+            const ctx = yield* requireSession(input.threadId);
+            // Reserve the turn while holding the thread lock. Without this,
+            // two initial sends can both observe an idle session before the
+            // first one yields for its turn id and both start new turns.
+            const steeringTurnId = ctx.promptsInFlight > 0 ? ctx.activeTurnId : undefined;
+            const turnId = steeringTurnId ?? TurnId.make(yield* randomUUIDv4);
+            // Count this prompt immediately so a superseded in-flight prompt
+            // resolving from here on does not settle the turn; the matching
+            // decrement is the `ensuring` below.
+            ctx.promptsInFlight += 1;
+            if (steeringTurnId === undefined) {
+              ctx.activeTurnId = turnId;
+            }
+            return { ctx, steeringTurnId, turnId };
+          }),
+        );
 
         return yield* Effect.gen(function* () {
           const turnModelSelection =
@@ -977,9 +996,15 @@ export function makeCursorAdapter(
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
           const rawPrompt = input.input?.trim() ?? "";
-          if (rawPrompt) {
+          const includeBrowserTools =
+            ctx.browserToolsAttached &&
+            ctx.createdViaNewSession &&
+            !ctx.browserInstructionsPrefixed &&
+            steeringTurnId === undefined &&
+            (rawPrompt.length > 0 || (input.attachments?.length ?? 0) > 0);
+          if (rawPrompt.length > 0 || includeBrowserTools) {
             let cursorSkillNames = ctx.cursorSkillNames;
-            if (hasCursorSkillMention(rawPrompt) && cursorSkillNames === undefined) {
+            if (rawPrompt.length > 0 && hasCursorSkillMention(rawPrompt) && cursorSkillNames === undefined) {
               const skills = yield* discoverCursorSkills(
                 ctx.session.cwd,
                 options?.environment,
@@ -997,7 +1022,10 @@ export function makeCursorAdapter(
             const prompt = cursorSkillNames
               ? rewriteCursorSkillMentions(rawPrompt, cursorSkillNames)
               : rawPrompt;
-            promptParts.push({ type: "text", text: prompt });
+            promptParts.push({
+              type: "text",
+              text: prefixHostBrowserToolInstructions(prompt, { includeBrowserTools }),
+            });
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
@@ -1060,6 +1088,9 @@ export function makeCursorAdapter(
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
             );
+          if (includeBrowserTools) {
+            ctx.browserInstructionsPrefixed = true;
+          }
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
           if (turnRecord) {

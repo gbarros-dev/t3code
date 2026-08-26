@@ -80,6 +80,7 @@ import {
   XAiExitPlanModeRequest,
 } from "../acp/XAiAcpExtension.ts";
 import { type GrokAdapterShape } from "../Services/GrokAdapter.ts";
+import { prefixHostBrowserToolInstructions } from "../HostBrowserToolInstructions.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -170,6 +171,12 @@ interface GrokSessionContext {
   promptResponsesReady: number;
   currentModelId: string | undefined;
   currentReasoningEffort: string | undefined;
+  /** False when this process loaded an existing ACP session. */
+  readonly createdViaNewSession: boolean;
+  /** True when the product-native preview MCP server was attached at session start. */
+  readonly browserToolsAttached: boolean;
+  /** True after the first successful prompt that carried in-app browser steering. */
+  browserInstructionsPrefixed: boolean;
   stopped: boolean;
 }
 
@@ -1301,6 +1308,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               requestedStartReasoningEffort !== undefined
                 ? normalizeGrokReasoningEffort(requestedStartReasoningEffort)
                 : currentStartReasoningEffort,
+            createdViaNewSession: resumeSessionId === undefined,
+            browserToolsAttached: mcpSession !== undefined,
+            browserInstructionsPrefixed: false,
             stopped: false,
           };
 
@@ -1517,7 +1527,16 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 "reasoningEffort",
               );
 
-              const text = input.input?.trim();
+              const userText = input.input?.trim() ?? "";
+              const includeBrowserTools =
+                ctx.browserToolsAttached &&
+                ctx.createdViaNewSession &&
+                !ctx.browserInstructionsPrefixed &&
+                steeringTurnId === undefined &&
+                (userText.length > 0 || (input.attachments?.length ?? 0) > 0);
+              const text = includeBrowserTools
+                ? prefixHostBrowserToolInstructions(userText, { includeBrowserTools: true })
+                : userText;
               // Grok ingests images only. Generic files reach the agent
               // through the path line ProviderService puts in the prompt.
               const imagePromptParts = yield* Effect.forEach(
@@ -1649,6 +1668,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 promptEpoch,
                 promptLifecycle: ctx.promptLifecycle,
                 steeringTurnId,
+                prefixBrowserTools: includeBrowserTools,
               };
             }).pipe(
               Effect.tapCause(() =>
@@ -1789,6 +1809,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   method: "session/prompt",
                   detail: "Grok session changed before the turn completed.",
                 });
+              }
+              if (prepared.prefixBrowserTools) {
+                ctx.browserInstructionsPrefixed = true;
               }
               // Keep prompt settlement atomic with respect to Stop and steering.
               // interruptTurn marks its target before waiting for this lock, so
