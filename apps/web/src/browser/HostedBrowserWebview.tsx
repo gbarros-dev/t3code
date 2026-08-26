@@ -264,6 +264,10 @@ export function HostedBrowserWebview(props: {
     rect: lastRect,
     hiddenSize,
   });
+  // Electron applies `partition` only at guest creation. Key it so a project
+  // change remounts instead of keeping the old cookie jar.
+  const webviewKey = `${config.partition}:${webviewGeneration}`;
+  const webviewSrc = webviewGeneration === 0 ? (latestUrlRef.current ?? initialSrc) : recoverySrc;
 
   return (
     <div
@@ -285,7 +289,7 @@ export function HostedBrowserWebview(props: {
           />
         ) : null}
         <webview
-          key={webviewGeneration}
+          key={webviewKey}
           ref={setWebviewRef}
           // Must be an attribute on the element itself: Electron reads it when the
           // guest attaches, so setting it from the ref callback lands too late and
@@ -293,7 +297,7 @@ export function HostedBrowserWebview(props: {
           // boolean, but react-dom drops boolean values for unrecognized attributes,
           // so the literal string has to be spread past the type.
           {...({ allowpopups: "true" } as unknown as { readonly allowpopups?: boolean })}
-          src={webviewGeneration === 0 ? initialSrc : recoverySrc}
+          src={webviewSrc}
           partition={config.partition}
           webpreferences={config.webPreferences}
           {...(config.preloadUrl ? { preload: config.preloadUrl } : {})}
