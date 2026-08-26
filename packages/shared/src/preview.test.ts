@@ -14,7 +14,13 @@ describe("previewBrowserScope", () => {
   it("joins environment and project so threads in one project share a partition", () => {
     expect(
       previewBrowserScope(EnvironmentId.make("environment-a"), ProjectId.make("project-1")),
-    ).toBe("environment-a:project-1");
+    ).toBe(JSON.stringify(["environment-a", "project-1"]));
+  });
+
+  it("keeps pairs distinct when ids contain colons", () => {
+    expect(previewBrowserScope(EnvironmentId.make("a:b"), ProjectId.make("c"))).not.toBe(
+      previewBrowserScope(EnvironmentId.make("a"), ProjectId.make("b:c")),
+    );
   });
 });
 

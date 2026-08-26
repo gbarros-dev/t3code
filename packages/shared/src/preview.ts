@@ -7,9 +7,14 @@
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-/** Persist-partition scope. Threads in one project share a login. */
+/**
+ * Persist-partition scope. Threads in one project share a login.
+ *
+ * Encoded as JSON so ids that contain `:` cannot collide
+ * (`"a:b"+"c"` vs `"a"+"b:c"`).
+ */
 export function previewBrowserScope(environmentId: EnvironmentId, projectId: ProjectId): string {
-  return `${environmentId}:${projectId}`;
+  return JSON.stringify([environmentId, projectId]);
 }
 
 const TAB_ID_PREFIX = "tab_";

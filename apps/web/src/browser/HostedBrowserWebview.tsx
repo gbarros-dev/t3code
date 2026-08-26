@@ -7,7 +7,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { cn, isMacPlatform } from "~/lib/utils";
-import { useThreadShell } from "~/state/entities";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { useActiveBrowserRecordingTabIds } from "./browserRecording";
@@ -20,6 +19,7 @@ import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
 import { resolveHostedBrowserWebviewWrapperStyle } from "./hostedBrowserWebviewStyle";
+import { usePreviewProjectId } from "./previewProjectId";
 import { usePreviewWebviewConfig } from "./previewWebviewConfigState";
 import { useBrowserViewportResize } from "./useBrowserViewportResize";
 import {
@@ -67,12 +67,8 @@ export function HostedBrowserWebview(props: {
     zoomFactor,
     profileId,
   } = props;
-  const threadShell = useThreadShell(threadRef);
-  const config = usePreviewWebviewConfig(
-    threadRef.environmentId,
-    threadShell?.projectId ?? null,
-    profileId,
-  );
+  const projectId = usePreviewProjectId(threadRef);
+  const config = usePreviewWebviewConfig(threadRef.environmentId, projectId, profileId);
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);

@@ -29,7 +29,6 @@ import {
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
-import { useThreadShell } from "~/state/entities";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
@@ -46,6 +45,7 @@ import {
   subscribeBrowserViewportChange,
 } from "~/browser/browserViewportActions";
 import { browserResponsiveViewportForToggle, useBrowserDefaults } from "~/browser/browserDefaults";
+import { usePreviewProjectId } from "~/browser/previewProjectId";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { PreviewUnreachable } from "./PreviewUnreachable";
 import { revealInFileExplorerLabel } from "./fileExplorerLabel";
@@ -106,7 +106,7 @@ export function PreviewView({
   // instead of the thread object, which is recreated on every update.
   const threadRefRef = useRef(threadRef);
   threadRefRef.current = threadRef;
-  const threadShell = useThreadShell(threadRef);
+  const projectId = usePreviewProjectId(threadRef);
   const previewState = useThreadPreviewState(threadRef);
   const recentHistoryEntries = useThreadRecentHistory(
     threadRef,
@@ -745,7 +745,7 @@ export function PreviewView({
           previewBridge ? (
             <PreviewMoreMenu
               environmentId={threadRef.environmentId}
-              projectId={threadShell?.projectId ?? null}
+              projectId={projectId}
               profileId={activeProfileId}
               profileName={activeProfileName}
               tabId={runtimeTabId}
