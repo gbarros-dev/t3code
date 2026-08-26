@@ -1,3 +1,4 @@
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -5,8 +6,17 @@ import {
   isPreviewableUrl,
   newPreviewTabId,
   normalizePreviewUrl,
+  previewBrowserScope,
   PreviewUrlNormalizationError,
 } from "./preview.ts";
+
+describe("previewBrowserScope", () => {
+  it("joins environment and project so threads in one project share a partition", () => {
+    expect(
+      previewBrowserScope(EnvironmentId.make("environment-a"), ProjectId.make("project-1")),
+    ).toBe("environment-a:project-1");
+  });
+});
 
 describe("newPreviewTabId", () => {
   it("returns a unique tab id every call", () => {

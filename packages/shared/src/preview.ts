@@ -1,10 +1,16 @@
 /**
- * Pure URL helpers shared between the preview server, desktop main process,
+ * Pure preview helpers shared between the preview server, desktop main process,
  * and web renderer. Centralising these guarantees the four call sites agree
  * on what counts as "loopback" and how to normalise a free-form URL string.
  */
 
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+
+/** Persist-partition scope. Threads in one project share a login. */
+export function previewBrowserScope(environmentId: EnvironmentId, projectId: ProjectId): string {
+  return `${environmentId}:${projectId}`;
+}
 
 const TAB_ID_PREFIX = "tab_";
 let nextPreviewTabSequence = 0;

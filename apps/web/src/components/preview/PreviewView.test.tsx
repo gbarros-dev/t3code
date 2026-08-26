@@ -59,6 +59,9 @@ vi.mock("~/browserHistoryStore", () => ({
 vi.mock("~/state/session", () => ({
   readPreparedConnection: mocks.readPreparedConnection,
 }));
+vi.mock("~/state/entities", () => ({
+  useThreadShell: () => ({ projectId: "project-1" }),
+}));
 
 // Stubbed at the direct dependency rather than letting the real module pull in
 // `useSettings` -> `state/server`, which would drag the whole settings and

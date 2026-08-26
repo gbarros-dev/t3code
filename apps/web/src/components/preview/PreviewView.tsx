@@ -29,6 +29,7 @@ import {
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
+import { useThreadShell } from "~/state/entities";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
@@ -105,6 +106,7 @@ export function PreviewView({
   // instead of the thread object, which is recreated on every update.
   const threadRefRef = useRef(threadRef);
   threadRefRef.current = threadRef;
+  const threadShell = useThreadShell(threadRef);
   const previewState = useThreadPreviewState(threadRef);
   const recentHistoryEntries = useThreadRecentHistory(
     threadRef,
@@ -743,6 +745,7 @@ export function PreviewView({
           previewBridge ? (
             <PreviewMoreMenu
               environmentId={threadRef.environmentId}
+              projectId={threadShell?.projectId ?? null}
               profileId={activeProfileId}
               profileName={activeProfileName}
               tabId={runtimeTabId}

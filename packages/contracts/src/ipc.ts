@@ -87,7 +87,7 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId } from "./baseSchemas.ts";
+import { EnvironmentId, ProjectId } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
@@ -626,7 +626,7 @@ export interface DesktopPreviewPointerEvent {
  * can attach.
  */
 export interface DesktopPreviewWebviewConfig {
-  /** `persist:t3code-preview` (or whatever the desktop chose). */
+  /** `persist:t3code-preview-<hash>` for this environment+project. */
   partition: string;
   /**
    * Canonical `<webview webpreferences="...">` string. Encodes the security
@@ -978,6 +978,7 @@ export const DesktopPreviewNavigateInputSchema = Schema.Struct({
 
 export const DesktopPreviewConfigInputSchema = Schema.Struct({
   environmentId: EnvironmentId,
+  projectId: ProjectId,
   /**
    * Browser profile the partition is derived from. Derivation stays in main:
    * `will-attach-webview` only prefix-checks the partition string, so a
@@ -989,7 +990,8 @@ export const DesktopPreviewConfigInputSchema = Schema.Struct({
 
 export const DesktopPreviewClearDataInputSchema = Schema.Struct({
   environmentId: EnvironmentId,
-  /** Omit to clear every profile; otherwise only this profile's partition. */
+  projectId: ProjectId,
+  /** Omit to clear the default profile; otherwise only this profile's partition. */
   profileId: Schema.optional(BrowserProfileId),
 });
 
@@ -1176,20 +1178,29 @@ export interface DesktopPreviewBridge {
   setAudioMuted: (tabId: string, audioMuted: boolean) => Promise<void>;
   /** Open the guest webview's DevTools (detached). */
   openDevTools: (tabId: string) => Promise<void>;
-  /** Drop cookies + storage data for the preview partition (all tabs). */
-  clearCookies: (environmentId: EnvironmentId, profileId?: string) => Promise<void>;
-  /** Drop the HTTP cache for the preview partition (all tabs). */
-  clearCache: (environmentId: EnvironmentId, profileId?: string) => Promise<void>;
+  /** Drop cookies + storage data for this environment+project preview partition. */
+  clearCookies: (input: {
+    environmentId: EnvironmentId;
+    projectId: ProjectId;
+    profileId?: string;
+  }) => Promise<void>;
+  /** Drop the HTTP cache for this environment+project preview partition. */
+  clearCache: (input: {
+    environmentId: EnvironmentId;
+    projectId: ProjectId;
+    profileId?: string;
+  }) => Promise<void>;
   /**
    * One-shot config for mounting a preview `<webview>`. Replaces three
    * earlier round-trip calls (`getBrowserPartition`, `getWebviewPreferences`,
    * `getPickPreloadPath`) so adding a new field here only requires touching
    * the contract + main, not the renderer's mount logic.
    */
-  getPreviewConfig: (
-    environmentId: EnvironmentId,
-    profileId?: string,
-  ) => Promise<DesktopPreviewWebviewConfig>;
+  getPreviewConfig: (input: {
+    environmentId: EnvironmentId;
+    projectId: ProjectId;
+    profileId?: string;
+  }) => Promise<DesktopPreviewWebviewConfig>;
   setAnnotationTheme: (theme: DesktopPreviewAnnotationTheme) => Promise<void>;
   /**
    * Activate the in-page element picker for the given tab. Resolves with

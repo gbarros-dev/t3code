@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { cn, isMacPlatform } from "~/lib/utils";
+import { useThreadShell } from "~/state/entities";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
 import { useActiveBrowserRecordingTabIds } from "./browserRecording";
@@ -66,7 +67,12 @@ export function HostedBrowserWebview(props: {
     zoomFactor,
     profileId,
   } = props;
-  const config = usePreviewWebviewConfig(threadRef.environmentId, profileId);
+  const threadShell = useThreadShell(threadRef);
+  const config = usePreviewWebviewConfig(
+    threadRef.environmentId,
+    threadShell?.projectId ?? null,
+    profileId,
+  );
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
