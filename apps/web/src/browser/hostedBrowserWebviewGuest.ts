@@ -1,7 +1,8 @@
 /**
- * Electron applies `partition` and `src` only when the guest is created.
- * Key the element by partition so a project change remounts. Latch `src` to
- * that key so later React renders cannot rewrite it and trigger loadURL.
+ * Electron treats `partition` and `src` as constructor inputs. Changing `src`
+ * after attach triggers navigation. Key the element by partition so a project
+ * change remounts. Latch `src` to that key so later React renders cannot
+ * rewrite it.
  */
 export function hostedBrowserWebviewKey(partition: string, generation: number): string {
   return `${partition}:${generation}`;

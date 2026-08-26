@@ -70,7 +70,6 @@ export function HostedBrowserWebview(props: {
   } = props;
   const projectId = usePreviewProjectId(threadRef);
   const config = usePreviewWebviewConfig(threadRef.environmentId, projectId, profileId);
-  const [initialSrc] = useState(() => initialUrl ?? "about:blank");
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<ElectronWebview | null>(null);
@@ -106,12 +105,7 @@ export function HostedBrowserWebview(props: {
   }, [runtimeTabId]);
 
   const [webviewGeneration, setWebviewGeneration] = useState(0);
-  const latestUrlRef = useRef(initialUrl);
   const guestSrcRef = useRef<{ readonly key: string; readonly src: string } | null>(null);
-
-  useEffect(() => {
-    latestUrlRef.current = initialUrl;
-  }, [initialUrl]);
 
   const setWebviewRef = useCallback((node: HTMLElement | null) => {
     webviewRef.current = node as ElectronWebview | null;
@@ -165,7 +159,7 @@ export function HostedBrowserWebview(props: {
       webview.removeEventListener("dom-ready", register);
       webview.removeEventListener("render-process-gone", recoverGuest);
     };
-  }, [config, initialSrc, runtimeTabId, webviewGeneration]);
+  }, [config, runtimeTabId, webviewGeneration]);
 
   const active = presentation.visible && presentation.rect !== null;
   const lastRect = presentation.rect;
@@ -268,7 +262,7 @@ export function HostedBrowserWebview(props: {
   guestSrcRef.current = latchHostedBrowserWebviewSrc(
     guestSrcRef.current,
     webviewKey,
-    latestUrlRef.current ?? initialSrc,
+    initialUrl ?? "about:blank",
   );
   const webviewSrc = guestSrcRef.current.src;
 
