@@ -18,6 +18,7 @@ import {
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import { BrowserViewportResizeHandles } from "./BrowserViewportResizeHandles";
 import { acquireDesktopTab, type AcquiredDesktopTab } from "./desktopTabLifetime";
+import { hostedBrowserWebviewKey, latchHostedBrowserWebviewSrc } from "./hostedBrowserWebviewGuest";
 import { resolveHostedBrowserWebviewWrapperStyle } from "./hostedBrowserWebviewStyle";
 import { usePreviewProjectId } from "./previewProjectId";
 import { usePreviewWebviewConfig } from "./previewWebviewConfigState";
@@ -105,8 +106,8 @@ export function HostedBrowserWebview(props: {
   }, [runtimeTabId]);
 
   const [webviewGeneration, setWebviewGeneration] = useState(0);
-  const [recoverySrc, setRecoverySrc] = useState(initialSrc);
   const latestUrlRef = useRef(initialUrl);
+  const guestSrcRef = useRef<{ readonly key: string; readonly src: string } | null>(null);
 
   useEffect(() => {
     latestUrlRef.current = initialUrl;
@@ -149,7 +150,6 @@ export function HostedBrowserWebview(props: {
       recoveryTimeout = setTimeout(() => {
         recoveryTimeout = null;
         if (!disposed) {
-          setRecoverySrc(latestUrlRef.current ?? initialSrc);
           setWebviewGeneration((generation) => generation + 1);
         }
       }, recovery.delayMs);
@@ -264,10 +264,13 @@ export function HostedBrowserWebview(props: {
     rect: lastRect,
     hiddenSize,
   });
-  // Electron applies `partition` only at guest creation. Key it so a project
-  // change remounts instead of keeping the old cookie jar.
-  const webviewKey = `${config.partition}:${webviewGeneration}`;
-  const webviewSrc = webviewGeneration === 0 ? (latestUrlRef.current ?? initialSrc) : recoverySrc;
+  const webviewKey = hostedBrowserWebviewKey(config.partition, webviewGeneration);
+  guestSrcRef.current = latchHostedBrowserWebviewSrc(
+    guestSrcRef.current,
+    webviewKey,
+    latestUrlRef.current ?? initialSrc,
+  );
+  const webviewSrc = guestSrcRef.current.src;
 
   return (
     <div
