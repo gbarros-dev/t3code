@@ -3625,20 +3625,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           try {
             const injected = globalThis.__t3PlaywrightInjected;
             const parsed = injected.parseSelector(${locatorJson});
-            let element;
-            try {
-              element = injected.querySelector(parsed, document, true);
-            } catch (error) {
-              const message = String(error);
-              if (message.toLowerCase().includes("strict mode")) {
-                const matches = injected.querySelectorAll
-                  ? injected.querySelectorAll(parsed, document)
-                  : [];
-                return { notFound: true, failureKind: "ambiguous", matchCount: matches.length || 2 };
-              }
-              throw error;
+            const matches = injected.querySelectorAll(parsed, document);
+            if (matches.length === 0) return { notFound: true, failureKind: "missing" };
+            if (matches.length > 1) {
+              return { notFound: true, failureKind: "ambiguous", matchCount: matches.length };
             }
-            if (!element) return { notFound: true, failureKind: "missing" };
+            const element = matches[0];
             const visible = injected.elementState(element, "visible");
             const enabled = injected.elementState(element, "enabled");
             if (!visible.matches) return { notFound: true, failureKind: "hidden" };

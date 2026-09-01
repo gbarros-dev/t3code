@@ -2,6 +2,7 @@ import { it as effectIt } from "@effect/vitest";
 import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
 import type { DesktopPreviewRecordingFrame } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as NodeVM from "node:vm";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -3925,12 +3926,15 @@ describe("Preview automation diagnostics", () => {
       Effect.gen(function* () {
         const selector = "role=button[name='target-secret']";
         let lookupResult: unknown = { notFound: true, failureKind: "missing" };
+        let lookupExpression = "";
         const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (method !== "Runtime.evaluate") return undefined;
           const expression = String(params?.["expression"] ?? "");
-          return expression.includes("const parsed = injected.parseSelector")
-            ? { result: { value: lookupResult } }
-            : { result: { value: true } };
+          if (expression.includes("const parsed = injected.parseSelector")) {
+            lookupExpression = expression;
+            return { result: { value: lookupResult } };
+          }
+          return { result: { value: true } };
         });
         fromId.mockReturnValue({
           ...makeTestPreviewWebContents(
@@ -3975,6 +3979,58 @@ describe("Preview automation diagnostics", () => {
           expect.objectContaining({ status: "failed" }),
         ]);
         expect(sendCommand).not.toHaveBeenCalledWith("Input.dispatchMouseEvent", expect.anything());
+
+        const element = {
+          scrollIntoView: vi.fn(),
+          getBoundingClientRect: () => ({ left: 20, top: 10, width: 40, height: 20 }),
+        };
+        const runLookup = (
+          matches: ReadonlyArray<typeof element>,
+          state: { readonly visible: boolean; readonly enabled: boolean },
+        ) => {
+          const querySelectorAll = vi.fn(() => matches);
+          const elementState = vi.fn((_element: typeof element, name: keyof typeof state) => ({
+            matches: state[name],
+          }));
+          const result = NodeVM.runInNewContext(lookupExpression, {
+            document: {},
+            globalThis: {
+              __t3PlaywrightInjected: {
+                parseSelector: vi.fn(() => ({ parts: [] })),
+                querySelectorAll,
+                elementState,
+              },
+            },
+          });
+          return { result, querySelectorAll, elementState };
+        };
+
+        const missingLookup = runLookup([], { visible: true, enabled: true });
+        expect(missingLookup.result).toEqual({ notFound: true, failureKind: "missing" });
+        expect(missingLookup.querySelectorAll).toHaveBeenCalledOnce();
+
+        const ambiguousLookup = runLookup([element, element, element], {
+          visible: true,
+          enabled: true,
+        });
+        expect(ambiguousLookup.result).toEqual({
+          notFound: true,
+          failureKind: "ambiguous",
+          matchCount: 3,
+        });
+        expect(ambiguousLookup.querySelectorAll).toHaveBeenCalledOnce();
+
+        const hiddenLookup = runLookup([element], { visible: false, enabled: true });
+        expect(hiddenLookup.result).toEqual({ notFound: true, failureKind: "hidden" });
+        expect(hiddenLookup.elementState).toHaveBeenCalledWith(element, "visible");
+
+        const disabledLookup = runLookup([element], { visible: true, enabled: false });
+        expect(disabledLookup.result).toEqual({ notFound: true, failureKind: "disabled" });
+        expect(disabledLookup.elementState).toHaveBeenCalledWith(element, "enabled");
+
+        const visibleLookup = runLookup([element], { visible: true, enabled: true });
+        expect(visibleLookup.result).toEqual({ x: 40, y: 20 });
+        expect(element.scrollIntoView).toHaveBeenCalledWith({ block: "center", inline: "center" });
       }),
     ),
   );
