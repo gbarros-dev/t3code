@@ -3752,9 +3752,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
       return { _tag: "Dispatched" } satisfies DesktopPreviewAutomationClickResult;
     }).pipe(
-      Effect.catchTag(
-        "PreviewAutomationTargetLookupError",
-        (
+      Effect.catchTags({
+        PreviewAutomationTargetLookupError: (
           error,
         ): Effect.Effect<
           DesktopPreviewAutomationClickResult,
@@ -3773,7 +3772,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             reason: `target-${error.failureKind}`,
           });
         },
-      ),
+      }),
     );
   });
 
@@ -4406,7 +4405,9 @@ export class PreviewAutomationTargetLookupError extends Schema.TaggedErrorClass<
       return `Preview automation ${this.operation} found ${target}, but it is disabled`;
     }
     if (this.failureKind === "ambiguous") {
-      return `Preview automation ${this.operation} matched ${this.matchCount ?? 0} elements for ${target}`;
+      return this.matchCount === undefined
+        ? `Preview automation ${this.operation} matched multiple elements for ${target}`
+        : `Preview automation ${this.operation} matched ${this.matchCount} elements for ${target}`;
     }
     return `Preview automation ${this.operation} could not find ${target}`;
   }

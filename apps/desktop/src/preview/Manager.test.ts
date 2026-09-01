@@ -3906,6 +3906,20 @@ describe("Preview automation diagnostics", () => {
     expect("locator" in error).toBe(false);
   });
 
+  it("does not invent an ambiguous target match count", () => {
+    const error = new PreviewManager.PreviewAutomationTargetLookupError({
+      operation: "click",
+      tabId: "tab_1",
+      selectorKind: "locator",
+      selectorLength: 12,
+      failureKind: "ambiguous",
+    });
+
+    expect(error.message).toBe(
+      "Preview automation click matched multiple elements for locator (12 characters)",
+    );
+  });
+
   effectIt.effect("returns typed click lookup failures without dispatching input", () =>
     withManager((manager) =>
       Effect.gen(function* () {
