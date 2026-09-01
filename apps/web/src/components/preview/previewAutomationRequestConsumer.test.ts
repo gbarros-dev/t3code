@@ -10,6 +10,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  confirmPreviewAutomationClickTarget,
   PreviewAutomationRecordingNotActiveError,
   PreviewAutomationTargetUnavailableError,
   PreviewAutomationViewportTimeoutError,
@@ -292,49 +293,34 @@ describe("previewAutomationRequestConsumer", () => {
   });
 
   it("maps hidden click targets to a named execution failure without leaking the locator", () => {
-    expect(
-      serializePreviewAutomationError(
-        {
-          _tag: "PreviewAutomationTargetHiddenError",
-          selector: "role=button[name='target-secret']",
-        },
-        {
-          requestId: "request-click",
-          operation: "click",
-          environmentId,
-          threadId,
-          tabId,
-        },
-      ),
-    ).toEqual({
-      _tag: "PreviewAutomationExecutionError",
-      message:
-        "Preview automation click request request-click found a target in tab tab-1, but it is not visible.",
+    const context = {
+      requestId: "request-click",
+      operation: "click" as const,
+      environmentId,
+      threadId,
+      tabId,
+    };
+    let error: unknown;
+    try {
+      confirmPreviewAutomationClickTarget({ _tag: "NotSent", reason: "target-hidden" }, context);
+    } catch (cause) {
+      error = cause;
+    }
+
+    const response = serializePreviewAutomationError(error, context);
+    expect(response).toEqual({
+      _tag: "PreviewAutomationTargetLookupError",
+      message: "The preview click target is not visible.",
       detail: {
         requestId: "request-click",
         operation: "click",
         environmentId: "environment-1",
         threadId: "thread-1",
         tabId: "tab-1",
+        failureKind: "hidden",
       },
     });
-    expect(
-      JSON.stringify(
-        serializePreviewAutomationError(
-          {
-            _tag: "PreviewAutomationTargetHiddenError",
-            selector: "role=button[name='target-secret']",
-          },
-          {
-            requestId: "request-click",
-            operation: "click",
-            environmentId,
-            threadId,
-            tabId,
-          },
-        ),
-      ),
-    ).not.toContain("secret");
+    expect(JSON.stringify(response)).not.toContain("target-secret");
   });
 
   it("maps desktop non-editable targets to the public typed response", () => {

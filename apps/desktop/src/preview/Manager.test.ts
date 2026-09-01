@@ -3906,44 +3906,62 @@ describe("Preview automation diagnostics", () => {
     expect("locator" in error).toBe(false);
   });
 
-  it("names hidden, disabled, and ambiguous click failures without leaking the locator", () => {
-    const selector = "role=button[name='target-secret']";
-    const hidden = new PreviewManager.PreviewAutomationTargetHiddenError({
-      operation: "click",
-      tabId: "tab_1",
-      selectorKind: "locator",
-      selectorLength: selector.length,
-    });
-    const disabled = new PreviewManager.PreviewAutomationTargetDisabledError({
-      operation: "click",
-      tabId: "tab_1",
-      selectorKind: "locator",
-      selectorLength: selector.length,
-    });
-    const ambiguous = new PreviewManager.PreviewAutomationTargetAmbiguousError({
-      operation: "click",
-      tabId: "tab_1",
-      selectorKind: "locator",
-      selectorLength: selector.length,
-      matchCount: 3,
-    });
-    expect(hidden.message).toContain("not visible");
-    expect(disabled.message).toContain("disabled");
-    expect(ambiguous.message).toContain("matched 3 elements");
-    expect(hidden.message).not.toContain("secret");
-    expect(disabled.message).not.toContain("secret");
-    expect(ambiguous.message).not.toContain("secret");
+  effectIt.effect("returns typed click lookup failures without dispatching input", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const selector = "role=button[name='target-secret']";
+        let lookupResult: unknown = { notFound: true, failureKind: "missing" };
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+          if (method !== "Runtime.evaluate") return undefined;
+          const expression = String(params?.["expression"] ?? "");
+          return expression.includes("const parsed = injected.parseSelector")
+            ? { result: { value: lookupResult } }
+            : { result: { value: true } };
+        });
+        fromId.mockReturnValue({
+          ...makeTestPreviewWebContents(
+            vi.fn(async () => ({
+              toJPEG: () => Buffer.from("unused-click-frame"),
+              toPNG: () => Buffer.from("unused-click-frame"),
+              getSize: () => ({ width: 1280, height: 720 }),
+            })),
+          ),
+          isDevToolsOpened: () => false,
+          debugger: {
+            isAttached: () => false,
+            attach: vi.fn(),
+            sendCommand,
+            on: vi.fn(),
+            off: vi.fn(),
+          },
+        } as never);
 
-    const fromAmbiguous = PreviewManager.PreviewAutomationTargetNotFoundError.fromLookupFailure({
-      operation: "click",
-      tabId: "tab_1",
-      selectorKind: "locator",
-      selectorLength: selector.length,
-      failureKind: "ambiguous",
-      matchCount: 3,
-    });
-    expect(fromAmbiguous).toBeInstanceOf(PreviewManager.PreviewAutomationTargetAmbiguousError);
-    expect(fromAmbiguous.message).toContain("matched 3 elements");
-    expect(fromAmbiguous.message).not.toContain("secret");
-  });
+        yield* manager.createTab("tab_lookup");
+        yield* manager.registerWebview("tab_lookup", 42);
+
+        const missing = yield* manager.automationClick("tab_lookup", { locator: selector });
+        lookupResult = { notFound: true, failureKind: "hidden" };
+        const hidden = yield* manager.automationClick("tab_lookup", { locator: selector });
+        lookupResult = { notFound: true, failureKind: "disabled" };
+        const disabled = yield* manager.automationClick("tab_lookup", { locator: selector });
+        lookupResult = { notFound: true, failureKind: "ambiguous", matchCount: 3 };
+        const ambiguous = yield* manager.automationClick("tab_lookup", { locator: selector });
+        const snapshot = yield* manager.automationSnapshot("tab_lookup");
+
+        expect([missing, hidden, disabled, ambiguous]).toEqual([
+          { _tag: "NotSent", reason: "target-missing" },
+          { _tag: "NotSent", reason: "target-hidden" },
+          { _tag: "NotSent", reason: "target-disabled" },
+          { _tag: "NotSent", reason: "target-ambiguous", matchCount: 3 },
+        ]);
+        expect(snapshot.actionTimeline.filter((action) => action.action === "click")).toEqual([
+          expect.objectContaining({ status: "failed" }),
+          expect.objectContaining({ status: "failed" }),
+          expect.objectContaining({ status: "failed" }),
+          expect.objectContaining({ status: "failed" }),
+        ]);
+        expect(sendCommand).not.toHaveBeenCalledWith("Input.dispatchMouseEvent", expect.anything());
+      }),
+    ),
+  );
 });

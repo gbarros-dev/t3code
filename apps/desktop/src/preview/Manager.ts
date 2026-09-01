@@ -8,6 +8,7 @@
 import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
 import type {
   DesktopPreviewAnnotationTheme,
+  DesktopPreviewAutomationClickResult,
   DesktopPreviewAutomationStatus,
   DesktopPreviewColorScheme,
   DesktopPreviewFavicon,
@@ -3661,13 +3662,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
     }
     if ("notFound" in point) {
-      return yield* PreviewAutomationTargetNotFoundError.fromLookupFailure({
+      return yield* new PreviewAutomationTargetLookupError({
         operation: "click",
         tabId,
         ...automationSelectorDiagnostics(input),
-        ...(point.failureKind === "ambiguous"
-          ? { failureKind: "ambiguous", matchCount: point.matchCount }
-          : { failureKind: point.failureKind }),
+        failureKind: point.failureKind,
+        ...(point.failureKind === "ambiguous" ? { matchCount: point.matchCount } : {}),
       });
     }
     return point;
@@ -3746,8 +3746,34 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationClickInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "click", (send) =>
-      performAutomationClick(tabId, input, send),
+    return yield* Effect.gen(function* () {
+      yield* withControlSession(tabId, wc, "click", (send) =>
+        performAutomationClick(tabId, input, send),
+      );
+      return { _tag: "Dispatched" } satisfies DesktopPreviewAutomationClickResult;
+    }).pipe(
+      Effect.catchTag(
+        "PreviewAutomationTargetLookupError",
+        (
+          error,
+        ): Effect.Effect<
+          DesktopPreviewAutomationClickResult,
+          PreviewAutomationTargetLookupError
+        > => {
+          if (error.failureKind === "ambiguous") {
+            if (error.matchCount === undefined) return Effect.fail(error);
+            return Effect.succeed<DesktopPreviewAutomationClickResult>({
+              _tag: "NotSent",
+              reason: "target-ambiguous",
+              matchCount: error.matchCount,
+            });
+          }
+          return Effect.succeed<DesktopPreviewAutomationClickResult>({
+            _tag: "NotSent",
+            reason: `target-${error.failureKind}`,
+          });
+        },
+      ),
     );
   });
 
@@ -4345,85 +4371,44 @@ export class PreviewAutomationEvaluationError extends Schema.TaggedErrorClass<Pr
   }
 }
 
-const PreviewAutomationTargetLookupFields = {
-  operation: Schema.String,
-  tabId: Schema.String,
-  selectorKind: PreviewAutomationSelectorKind,
-  selectorLength: Schema.optionalKey(Schema.Number),
-};
-
 export class PreviewAutomationTargetNotFoundError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotFoundError>()(
   "PreviewAutomationTargetNotFoundError",
-  PreviewAutomationTargetLookupFields,
+  {
+    operation: Schema.String,
+    tabId: Schema.String,
+    selectorKind: PreviewAutomationSelectorKind,
+    selectorLength: Schema.optionalKey(Schema.Number),
+  },
 ) {
-  static fromLookupFailure(
-    input: {
-      readonly operation: string;
-      readonly tabId: string;
-      readonly selectorKind: PreviewAutomationSelectorKind;
-      readonly selectorLength?: number;
-    } & (
-      | { readonly failureKind: "ambiguous"; readonly matchCount: number }
-      | { readonly failureKind?: "missing" | "hidden" | "disabled" }
-    ),
-  ) {
-    const shared = {
-      operation: input.operation,
-      tabId: input.tabId,
-      selectorKind: input.selectorKind,
-      ...(input.selectorLength === undefined ? {} : { selectorLength: input.selectorLength }),
-    };
-    if (input.failureKind === "hidden") {
-      return new PreviewAutomationTargetHiddenError(shared);
-    }
-    if (input.failureKind === "disabled") {
-      return new PreviewAutomationTargetDisabledError(shared);
-    }
-    if (input.failureKind === "ambiguous") {
-      return new PreviewAutomationTargetAmbiguousError({
-        ...shared,
-        matchCount: input.matchCount,
-      });
-    }
-    return new PreviewAutomationTargetNotFoundError(shared);
-  }
-
   override get message(): string {
     const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
     return `Preview automation ${this.operation} could not find ${target} in tab ${this.tabId}`;
   }
 }
 
-export class PreviewAutomationTargetHiddenError extends Schema.TaggedErrorClass<PreviewAutomationTargetHiddenError>()(
-  "PreviewAutomationTargetHiddenError",
-  PreviewAutomationTargetLookupFields,
-) {
-  override get message(): string {
-    const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
-    return `Preview automation ${this.operation} found ${target} in tab ${this.tabId}, but it is not visible`;
-  }
-}
-
-export class PreviewAutomationTargetDisabledError extends Schema.TaggedErrorClass<PreviewAutomationTargetDisabledError>()(
-  "PreviewAutomationTargetDisabledError",
-  PreviewAutomationTargetLookupFields,
-) {
-  override get message(): string {
-    const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
-    return `Preview automation ${this.operation} found ${target} in tab ${this.tabId}, but it is disabled`;
-  }
-}
-
-export class PreviewAutomationTargetAmbiguousError extends Schema.TaggedErrorClass<PreviewAutomationTargetAmbiguousError>()(
-  "PreviewAutomationTargetAmbiguousError",
+export class PreviewAutomationTargetLookupError extends Schema.TaggedErrorClass<PreviewAutomationTargetLookupError>()(
+  "PreviewAutomationTargetLookupError",
   {
-    ...PreviewAutomationTargetLookupFields,
-    matchCount: Schema.Number,
+    operation: Schema.String,
+    tabId: Schema.String,
+    selectorKind: PreviewAutomationSelectorKind,
+    selectorLength: Schema.optionalKey(Schema.Number),
+    failureKind: Schema.Literals(["missing", "hidden", "disabled", "ambiguous"]),
+    matchCount: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
   },
 ) {
   override get message(): string {
     const target = previewAutomationTargetLabel(this.selectorKind, this.selectorLength);
-    return `Preview automation ${this.operation} matched ${this.matchCount} elements for ${target} in tab ${this.tabId}`;
+    if (this.failureKind === "hidden") {
+      return `Preview automation ${this.operation} found ${target}, but it is not visible`;
+    }
+    if (this.failureKind === "disabled") {
+      return `Preview automation ${this.operation} found ${target}, but it is disabled`;
+    }
+    if (this.failureKind === "ambiguous") {
+      return `Preview automation ${this.operation} matched ${this.matchCount ?? 0} elements for ${target}`;
+    }
+    return `Preview automation ${this.operation} could not find ${target}`;
   }
 }
 
@@ -4545,9 +4530,7 @@ export const PreviewManagerError = Schema.Union([
   PreviewAutomationDebuggerAttachedError,
   PreviewAutomationEvaluationError,
   PreviewAutomationTargetNotFoundError,
-  PreviewAutomationTargetHiddenError,
-  PreviewAutomationTargetDisabledError,
-  PreviewAutomationTargetAmbiguousError,
+  PreviewAutomationTargetLookupError,
   PreviewAutomationTargetNotEditableError,
   PreviewAutomationCoordinatesOutsideViewportError,
   PreviewAutomationInvalidSelectorError,
@@ -4646,7 +4629,7 @@ export class PreviewManager extends Context.Service<
     readonly automationClick: (
       tabId: string,
       input: PreviewAutomationClickInput,
-    ) => Effect.Effect<void, PreviewManagerError>;
+    ) => Effect.Effect<DesktopPreviewAutomationClickResult, PreviewManagerError>;
     readonly automationType: (
       tabId: string,
       input: PreviewAutomationTypeInput,
