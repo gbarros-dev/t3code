@@ -1,10 +1,17 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  type DesktopPreviewAutomationClickResult,
+  EnvironmentId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   confirmPreviewAutomationClickTarget,
+  PreviewAutomationOperationError,
   PreviewAutomationTargetLookupHostError,
 } from "./previewAutomationErrors";
+
+type NotSentClickResult = Extract<DesktopPreviewAutomationClickResult, { _tag: "NotSent" }>;
 
 describe("confirmPreviewAutomationClickTarget", () => {
   const context = {
@@ -52,5 +59,34 @@ describe("confirmPreviewAutomationClickTarget", () => {
     expect(hidden.message).not.toContain("secret");
     expect(disabled.message).not.toContain("secret");
     expect(ambiguous.message).not.toContain("secret");
+  });
+
+  it("fails every NotSent outcome and preserves successful results", () => {
+    const results = [
+      { _tag: "NotSent", reason: "tab-not-visible" },
+      { _tag: "NotSent", reason: "timeout", timeoutMs: 5_000 },
+      { _tag: "NotSent", reason: "target-missing" },
+      { _tag: "NotSent", reason: "target-hidden" },
+      { _tag: "NotSent", reason: "target-disabled" },
+      { _tag: "NotSent", reason: "target-ambiguous", matchCount: 3 },
+    ] satisfies ReadonlyArray<NotSentClickResult>;
+
+    for (const result of results) {
+      expect(() => confirmPreviewAutomationClickTarget(result, context)).toThrow();
+    }
+
+    for (const result of results.slice(0, 2)) {
+      try {
+        confirmPreviewAutomationClickTarget(result, context);
+        throw new Error("Expected click target confirmation to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewAutomationOperationError);
+        expect((error as PreviewAutomationOperationError).cause).toEqual(result);
+      }
+    }
+
+    const dispatched = { _tag: "Dispatched" } as const;
+    expect(confirmPreviewAutomationClickTarget(dispatched, context)).toBe(dispatched);
+    expect(confirmPreviewAutomationClickTarget(undefined, context)).toBeUndefined();
   });
 });

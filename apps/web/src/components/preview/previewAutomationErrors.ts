@@ -195,7 +195,7 @@ export function confirmPreviewAutomationClickTarget(
         matchCount: result.matchCount,
       });
     default:
-      return result;
+      throw new PreviewAutomationOperationError({ ...context, cause: result });
   }
 }
 
