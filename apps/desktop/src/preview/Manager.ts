@@ -3469,6 +3469,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               ? null
               : navStatus.title,
         loading: navStatus?.kind === "Loading",
+        attached: false,
       };
     }
     const wc = webContents.fromId(tab.webContentsId);
@@ -3483,6 +3484,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             ? tab.navStatus.description || tab.navStatus.title
             : null,
         loading: false,
+        attached: false,
       };
     }
     if (tab.navStatus.kind === "LoadFailed") {
@@ -3493,6 +3495,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         url: tab.navStatus.url,
         title: tab.navStatus.description || wc.getTitle() || tab.navStatus.title,
         loading: false,
+        attached: true,
       };
     }
     return {
@@ -3502,6 +3505,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       url: wc.getURL() || null,
       title: wc.getTitle() || null,
       loading: wc.isLoading(),
+      attached: true,
     };
   });
 

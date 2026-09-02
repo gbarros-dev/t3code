@@ -484,6 +484,7 @@ describe("PreviewManager", () => {
           url: null,
           title: null,
           loading: false,
+          attached: false,
         });
 
         yield* manager.createTab("tab_1");
@@ -495,6 +496,7 @@ describe("PreviewManager", () => {
           url: null,
           title: null,
           loading: false,
+          attached: false,
         });
         expect(fromId).not.toHaveBeenCalled();
       }),
@@ -553,6 +555,7 @@ describe("PreviewManager", () => {
           url: "http://localhost:5173/",
           title: "ERR_CONNECTION_REFUSED",
           loading: false,
+          attached: true,
         });
 
         url = "chrome-error://chromewebdata/";
@@ -563,6 +566,29 @@ describe("PreviewManager", () => {
           url: "http://localhost:5173/",
           title: "ERR_CONNECTION_REFUSED",
           loading: false,
+          attached: true,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("reports a destroyed guest as detached even when webContentsId remains", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        fromId.mockReturnValue(preview.webContents);
+        yield* manager.createTab("tab_destroyed_status");
+        yield* manager.registerWebview("tab_destroyed_status", 42);
+        preview.setDestroyed(true);
+
+        expect(yield* manager.automationStatus("tab_destroyed_status")).toEqual({
+          available: false,
+          visible: true,
+          tabId: "tab_destroyed_status",
+          url: "http://localhost:3200/",
+          title: null,
+          loading: false,
+          attached: false,
         });
       }),
     ),
@@ -703,6 +729,7 @@ describe("PreviewManager", () => {
           url: "http://localhost:3200/",
           title: "",
           loading: true,
+          attached: false,
         });
 
         yield* manager.registerWebview("tab_pending", 42);

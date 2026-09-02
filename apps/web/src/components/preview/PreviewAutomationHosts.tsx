@@ -238,7 +238,15 @@ const currentStatus = async (
   if (runtimeTabId && tabId && previewBridge && state.desktopByTabId[tabId]) {
     const status = await previewBridge.automation.status(runtimeTabId);
     return applyPreviewLoadFailureToAutomationStatus(
-      { ...status, tabId, visible, ...viewportStatus },
+      {
+        available: status.available,
+        visible,
+        tabId,
+        url: status.url,
+        title: status.title,
+        loading: status.loading,
+        ...viewportStatus,
+      },
       snapshot?.navStatus,
       { preferLiveAvailability: true },
     );

@@ -51,7 +51,7 @@ export async function waitForNavigationReadiness(
   if (targetReadiness === "none") return;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
-    const state = assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, {
+    assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, {
       operation,
       requestId,
     });
@@ -64,9 +64,13 @@ export async function waitForNavigationReadiness(
       const status = await previewBridge.automation.status(runtimeTabId);
       if (!status.loading) {
         if (status.available) return;
-        // LoadFailed reports available:false with a live guest. A detached
-        // webContents is not a finished load.
-        if (state.desktopByTabId[tabId]?.hasWebContents) return;
+        // LoadFailed reports available:false with a live guest. A destroyed
+        // webContents is not a finished load. Prefer the main-process
+        // `attached` bit; fall back to a fresh overlay read for older hosts.
+        const attached =
+          status.attached ??
+          readThreadPreviewState(threadRef).desktopByTabId[tabId]?.hasWebContents;
+        if (attached) return;
         throw new PreviewAutomationTargetUnavailableError({
           requestId,
           operation,

@@ -73,4 +73,26 @@ describe("previewAutomationStatus", () => {
       ),
     ).toEqual(healthy);
   });
+
+  it("does not let a stale LoadFailed snapshot hide an in-flight load", () => {
+    const attaching = {
+      ...healthy,
+      available: false,
+      loading: true,
+      title: null,
+    };
+    expect(
+      applyPreviewLoadFailureToAutomationStatus(
+        attaching,
+        {
+          _tag: "LoadFailed",
+          url: "http://localhost:5173/",
+          title: "localhost:5173",
+          code: -102,
+          description: "ERR_CONNECTION_REFUSED",
+        },
+        { preferLiveAvailability: true },
+      ),
+    ).toEqual(attaching);
+  });
 });
