@@ -508,13 +508,14 @@ describe("PreviewManager", () => {
       Effect.gen(function* () {
         const listeners = new Map<string, (...args: unknown[]) => void>();
         let url = "http://localhost:5173/";
+        let loading = false;
         fromId.mockReturnValue({
           id: 42,
           isDestroyed: () => false,
           getType: () => "webview",
           getURL: () => url,
           getTitle: () => "localhost:5173",
-          isLoading: () => false,
+          isLoading: () => loading,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
@@ -559,13 +560,14 @@ describe("PreviewManager", () => {
         });
 
         url = "chrome-error://chromewebdata/";
+        loading = true;
         expect(yield* manager.automationStatus("tab_failed")).toEqual({
           available: false,
           visible: true,
           tabId: "tab_failed",
           url: "http://localhost:5173/",
           title: "ERR_CONNECTION_REFUSED",
-          loading: false,
+          loading: true,
           attached: true,
         });
       }),

@@ -3494,7 +3494,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         tabId,
         url: tab.navStatus.url,
         title: tab.navStatus.description || wc.getTitle() || tab.navStatus.title,
-        loading: false,
+        loading: wc.isLoading(),
         attached: true,
       };
     }
