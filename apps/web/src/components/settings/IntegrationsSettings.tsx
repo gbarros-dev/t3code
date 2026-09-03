@@ -33,12 +33,14 @@ import {
   type PreviewAppearancePreference,
   type PreviewViewportSetting,
 } from "@t3tools/contracts";
+import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { InfoIcon, Plus as PlusIcon, Trash2 as Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
+import { readRememberedPreviewProjectRefs } from "~/browser/previewProjectRefs";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { cn, randomUUID } from "~/lib/utils";
 import { useEnvironments } from "~/state/environments";
@@ -634,6 +636,12 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const updateSettings = useUpdatePrimarySettings();
   const { environments, isReady: environmentsReady } = useEnvironments();
   const projects = useProjects();
+  const projectRefs = new Map(
+    [
+      ...readRememberedPreviewProjectRefs(),
+      ...projects.map(({ environmentId, id: projectId }) => ({ environmentId, projectId })),
+    ].map((ref) => [scopedProjectKey(ref), ref] as const),
+  );
   const [profilePendingRemoval, setProfilePendingRemoval] = useState<BrowserProfile | null>(null);
   const [profileRemovalError, setProfileRemovalError] = useState<string | null>(null);
   const [profileRemovalInFlight, setProfileRemovalInFlight] = useState(false);
@@ -685,7 +693,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
       await clearBrowserProfileData(
         previewBridge,
         environmentsReady ? environments.map((environment) => environment.environmentId) : [],
-        projects.map(({ environmentId, id: projectId }) => ({ environmentId, projectId })),
+        [...projectRefs.values()],
         id,
       );
     } catch {
