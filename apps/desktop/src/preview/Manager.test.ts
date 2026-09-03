@@ -4123,6 +4123,9 @@ describe("Preview automation snapshots", () => {
         expect(expressions.some((expression) => expression.includes("searchRoots.some"))).toBe(
           true,
         );
+        expect(
+          expressions.some((expression) => expression.includes('data-slot$="-viewport"')),
+        ).toBe(false);
       }),
     ),
   );

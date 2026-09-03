@@ -4099,7 +4099,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   : [
                       root,
                       ...Array.from(document.querySelectorAll(
-                        '[aria-modal="true"], [role="dialog"], [role="alertdialog"], [data-slot$="-popup"], [data-slot$="-viewport"], [data-slot$="-positioner"], [data-slot$="-portal"], [data-radix-portal], [data-radix-popper-content-wrapper]'
+                        '[aria-modal="true"], [role="dialog"], [role="alertdialog"], [data-slot$="-popup"], [data-slot$="-positioner"], [data-slot$="-portal"], [data-radix-portal], [data-radix-popper-content-wrapper]'
                       )),
                     ];
                 const selectorMatched = ${
