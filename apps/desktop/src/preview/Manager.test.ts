@@ -4048,6 +4048,17 @@ describe("Preview automation snapshots", () => {
         expect(slim.networkEntries).toEqual([]);
         const slimMethods = sendCommand.mock.calls.map(([method]) => method);
         expect(slimMethods).not.toContain("Accessibility.getFullAXTree");
+        expect(
+          sendCommand.mock.calls.some(
+            ([method, params]) =>
+              method === "Runtime.evaluate" &&
+              typeof params === "object" &&
+              params !== null &&
+              "expression" in params &&
+              typeof params.expression === "string" &&
+              params.expression.includes('main, [role="main"]'),
+          ),
+        ).toBe(true);
 
         sendCommand.mockClear();
         const withAx = yield* manager.automationSnapshot("tab_snapshot", ["ax"]);
@@ -4106,7 +4117,12 @@ describe("Preview automation snapshots", () => {
         yield* manager.createTab("tab_wait");
         yield* manager.registerWebview("tab_wait", 42);
         yield* manager.automationWaitFor("tab_wait", { text: "Dashboard" });
-        expect(expressions.some((expression) => expression.includes('"main"'))).toBe(true);
+        expect(expressions.some((expression) => expression.includes('main, [role="main"]'))).toBe(
+          true,
+        );
+        expect(expressions.some((expression) => expression.includes("searchRoots.some"))).toBe(
+          true,
+        );
       }),
     ),
   );

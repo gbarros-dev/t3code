@@ -3577,7 +3577,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               height: rect.height
             };
           });
-          const main = document.querySelector("main");
+          const main = document.querySelector('main, [role="main"]');
           return {
             url: location.href,
             title: document.title,
@@ -4093,27 +4093,38 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               try {
                 const root = ${scopeJson} === "document"
                   ? document.documentElement
-                  : (document.querySelector("main") || document.documentElement);
+                  : (document.querySelector('main, [role="main"]') || document.documentElement);
+                const searchRoots = ${scopeJson} === "document"
+                  ? [root]
+                  : [
+                      root,
+                      ...Array.from(document.querySelectorAll(
+                        '[aria-modal="true"], [role="dialog"], [role="alertdialog"], [data-slot$="-popup"], [data-slot$="-viewport"], [data-slot$="-positioner"], [data-slot$="-portal"], [data-radix-portal], [data-radix-popper-content-wrapper]'
+                      )),
+                    ];
                 const selectorMatched = ${
                   locatorJson
                     ? `(() => {
                   const injected = globalThis.__t3PlaywrightInjected;
                   const parsed = injected.parseSelector(${locatorJson});
-                  const element = injected.querySelector(parsed, root, false);
-                  if (!element) return false;
-                  const visible = injected.elementState(element, "visible");
-                  if (!visible.matches) return false;
-                  if (element.getAttribute("role") === "dialog") {
-                    const slot = element.getAttribute("data-slot") || "";
-                    if (slot.includes("trigger")) return false;
-                  }
-                  return true;
+                  return searchRoots.some((searchRoot) => {
+                    const element = injected.querySelector(parsed, searchRoot, false);
+                    if (!element) return false;
+                    const visible = injected.elementState(element, "visible");
+                    if (!visible.matches) return false;
+                    if (element.getAttribute("role") === "dialog") {
+                      const slot = element.getAttribute("data-slot") || "";
+                      if (slot.includes("trigger")) return false;
+                    }
+                    return true;
+                  });
                 })()`
                     : "true"
                 };
-                const textRoot = root instanceof Element ? root : (root.body || document.body);
                 const textMatched = ${
-                  textJson ? `(textRoot?.innerText || "").includes(${textJson})` : "true"
+                  textJson
+                    ? `searchRoots.some((searchRoot) => (searchRoot.innerText || "").includes(${textJson}))`
+                    : "true"
                 };
                 const urlMatched = ${
                   urlIncludesJson ? `location.href.includes(${urlIncludesJson})` : "true"
