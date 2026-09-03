@@ -70,7 +70,14 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
     usePreviewMiniPlayerStore.getState().close(threadRef);
   };
   const retry = () => {
-    if (previewBridge && runtimeTabId) void previewBridge.refresh(runtimeTabId);
+    if (!previewBridge || !runtimeTabId || !desktopOverlay?.hasWebContents) return;
+    void previewBridge.refresh(runtimeTabId).catch((error) => {
+      toastManager.add({
+        type: "error",
+        title: "Unable to retry preview",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      });
+    });
   };
 
   const openInPanel = () => {
