@@ -1000,7 +1000,6 @@ export function makeCursorAdapter(
             ctx.browserToolsAttached &&
             ctx.createdViaNewSession &&
             !ctx.browserInstructionsPrefixed &&
-            steeringTurnId === undefined &&
             (userText.length > 0 || (input.attachments?.length ?? 0) > 0);
           if (userText.length > 0 || includeBrowserTools) {
             let cursorSkillNames = ctx.cursorSkillNames;
@@ -1092,7 +1091,7 @@ export function makeCursorAdapter(
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
             );
-          if (includeBrowserTools) {
+          if (includeBrowserTools && result.stopReason !== "cancelled") {
             ctx.browserInstructionsPrefixed = true;
           }
 

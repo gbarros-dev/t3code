@@ -1532,7 +1532,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 ctx.browserToolsAttached &&
                 ctx.createdViaNewSession &&
                 !ctx.browserInstructionsPrefixed &&
-                steeringTurnId === undefined &&
                 (userText.length > 0 || (input.attachments?.length ?? 0) > 0);
               const text = includeBrowserTools
                 ? prefixHostBrowserToolInstructions(userText, { includeBrowserTools: true })
@@ -1841,7 +1840,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               }
 
               appendPromptResultToTurn(ctx, prepared.turnId, prepared.promptParts, result);
-              if (prepared.prefixBrowserTools) {
+              if (prepared.prefixBrowserTools && result.stopReason !== "cancelled") {
                 ctx.browserInstructionsPrefixed = true;
               }
               ctx.session = {
@@ -1950,6 +1949,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                       prepared.promptParts,
                       promptResult,
                     );
+                    if (prepared.prefixBrowserTools && promptResult.stopReason !== "cancelled") {
+                      ctx.browserInstructionsPrefixed = true;
+                    }
                     yield* settlePromptInFlight(
                       input.threadId,
                       prepared.turnId,
