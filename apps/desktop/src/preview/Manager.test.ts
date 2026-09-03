@@ -4029,7 +4029,7 @@ describe("Preview automation snapshots", () => {
   effectIt.effect("omits ax, console, and network unless include asks", () =>
     withManager((manager) =>
       Effect.gen(function* () {
-        const sendCommand = vi.fn(async (method: string) => {
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (method === "Runtime.evaluate") {
             return { result: { value: pageValue } };
           }
