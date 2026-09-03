@@ -4009,6 +4009,7 @@ describe("Preview automation snapshots", () => {
       isDevToolsOpened: () => false,
       getZoomFactor: () => 1,
       setZoomFactor: vi.fn(),
+      setAudioMuted: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
       ipc: { on: vi.fn(), off: vi.fn() },
