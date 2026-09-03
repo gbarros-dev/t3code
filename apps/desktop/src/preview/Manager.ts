@@ -4107,16 +4107,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                     ? `(() => {
                   const injected = globalThis.__t3PlaywrightInjected;
                   const parsed = injected.parseSelector(${locatorJson});
+                  const elements = injected.querySelectorAll(parsed, document);
                   return searchRoots.some((searchRoot) => {
-                    const element = injected.querySelector(parsed, searchRoot, false);
-                    if (!element) return false;
-                    const visible = injected.elementState(element, "visible");
-                    if (!visible.matches) return false;
-                    if (element.getAttribute("role") === "dialog") {
-                      const slot = element.getAttribute("data-slot") || "";
-                      if (slot.includes("trigger")) return false;
-                    }
-                    return true;
+                    return elements.some((element) => {
+                      if (element !== searchRoot && !searchRoot.contains(element)) return false;
+                      const visible = injected.elementState(element, "visible");
+                      if (!visible.matches) return false;
+                      if (element.getAttribute("role") === "dialog") {
+                        const slot = element.getAttribute("data-slot") || "";
+                        if (slot.includes("trigger")) return false;
+                      }
+                      return true;
+                    });
                   });
                 })()`
                     : "true"
