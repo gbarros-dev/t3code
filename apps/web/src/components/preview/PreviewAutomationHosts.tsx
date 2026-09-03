@@ -106,9 +106,21 @@ const waitForDesktopOverlay = async (
     });
     // Attachment only. LoadFailed still has a live guest and must stay
     // reachable so navigate/retry can recover. Page health is reported by
-    // preview_status, not this wait.
+    // preview_status, not this wait. Re-read the main-process attachment bit
+    // because a stale overlay snapshot can retain hasWebContents after destroy.
     if (state.desktopByTabId[tabId]?.hasWebContents && previewBridge) {
-      return;
+      const status = await previewBridge.automation.status(runtimeTabId).catch(() => null);
+      if (status?.attached === false) {
+        throw new PreviewAutomationTargetUnavailableError({
+          requestId,
+          operation,
+          environmentId: threadRef.environmentId,
+          threadId: threadRef.threadId,
+          tabId,
+          bridgeAvailable: true,
+        });
+      }
+      if (status) return;
     }
     await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
   }
