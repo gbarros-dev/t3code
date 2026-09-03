@@ -22,6 +22,8 @@ import {
   DesktopPreviewWebviewConfigSchema,
   PreviewAnnotationSubmissionResultSchema,
   PreviewAutomationSnapshot,
+  EnvironmentId,
+  ProjectId,
   DEFAULT_BROWSER_PROFILE_ID,
   INCOGNITO_BROWSER_PROFILE_ID,
 } from "@t3tools/contracts";
@@ -246,7 +248,10 @@ export function resolvePartitionScope(
   readonly persistent: boolean;
   readonly namespace?: "profile";
 } {
-  const projectScope = previewBrowserScope(environmentId, projectId);
+  const projectScope = previewBrowserScope(
+    EnvironmentId.make(environmentId),
+    ProjectId.make(projectId),
+  );
   if (profileId === undefined || profileId === DEFAULT_BROWSER_PROFILE_ID) {
     return { scope: projectScope, persistent: true };
   }
@@ -260,17 +265,42 @@ export function resolvePartitionScope(
   };
 }
 
+const resolveLegacyPartitionScope = (
+  environmentId: string,
+  profileId: string | undefined,
+): {
+  readonly scope: string;
+  readonly persistent: boolean;
+  readonly namespace?: "profile";
+} => {
+  if (profileId === undefined || profileId === DEFAULT_BROWSER_PROFILE_ID) {
+    return { scope: environmentId, persistent: true };
+  }
+  return {
+    scope: JSON.stringify([environmentId, profileId]),
+    persistent: profileId !== INCOGNITO_BROWSER_PROFILE_ID,
+    namespace: "profile",
+  };
+};
+
 /**
  * Resolve the one partition addressed by a clear action. The default profile
- * is explicit when the profile field is omitted, so a clear from one project
- * cannot reach another project's or another profile's storage.
+ * is explicit when the profile field is omitted, so a project-aware clear
+ * cannot reach another project's or another profile's storage. Calls without
+ * a project retain the profile settings' pre-project compatibility path.
  */
 const resolveClearPartitions = Effect.fn("desktop.ipc.preview.resolveClearPartitions")(function* (
   manager: PreviewManager.PreviewManager["Service"],
   environmentId: string,
-  projectId: string,
+  projectId: string | undefined,
   profileId: string | undefined,
 ) {
+  if (projectId === undefined) {
+    if (profileId === undefined) return undefined;
+    const { scope, persistent, namespace } = resolveLegacyPartitionScope(environmentId, profileId);
+    yield* manager.getBrowserSession(scope, persistent, namespace);
+    return [yield* manager.getBrowserPartition(scope, persistent, namespace)];
+  }
   const { scope, persistent, namespace } = resolvePartitionScope(
     environmentId,
     projectId,

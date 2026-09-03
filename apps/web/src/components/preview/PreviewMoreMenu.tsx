@@ -220,7 +220,7 @@ export function PreviewMoreMenu({
               <MenuItem
                 onClick={() =>
                   void bridge
-                    .clearCookies({ environmentId, projectId, profileId })
+                    .clearCookies(environmentId, profileId, projectId)
                     .catch(() => undefined)
                 }
               >
@@ -228,9 +228,7 @@ export function PreviewMoreMenu({
               </MenuItem>
               <MenuItem
                 onClick={() =>
-                  void bridge
-                    .clearCache({ environmentId, projectId, profileId })
-                    .catch(() => undefined)
+                  void bridge.clearCache(environmentId, profileId, projectId).catch(() => undefined)
                 }
               >
                 Clear cache

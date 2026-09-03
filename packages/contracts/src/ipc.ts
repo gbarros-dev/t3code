@@ -990,9 +990,10 @@ export const DesktopPreviewConfigInputSchema = Schema.Struct({
 
 export const DesktopPreviewClearDataInputSchema = Schema.Struct({
   environmentId: EnvironmentId,
-  projectId: ProjectId,
-  /** Omit to clear the default profile; otherwise only this profile's partition. */
+  /** Profile whose preview storage should be cleared. */
   profileId: Schema.optional(BrowserProfileId),
+  /** Project that owns the partition; omitted by legacy profile maintenance. */
+  projectId: Schema.optional(ProjectId),
 });
 
 export const DesktopPreviewSetColorSchemeInputSchema = Schema.Struct({
@@ -1178,18 +1179,18 @@ export interface DesktopPreviewBridge {
   setAudioMuted: (tabId: string, audioMuted: boolean) => Promise<void>;
   /** Open the guest webview's DevTools (detached). */
   openDevTools: (tabId: string) => Promise<void>;
-  /** Drop cookies + storage data for this environment+project preview partition. */
-  clearCookies: (input: {
-    environmentId: EnvironmentId;
-    projectId: ProjectId;
-    profileId?: string;
-  }) => Promise<void>;
-  /** Drop the HTTP cache for this environment+project preview partition. */
-  clearCache: (input: {
-    environmentId: EnvironmentId;
-    projectId: ProjectId;
-    profileId?: string;
-  }) => Promise<void>;
+  /** Drop cookies + storage data for a preview partition. */
+  clearCookies: (
+    environmentId: EnvironmentId,
+    profileId?: string,
+    projectId?: ProjectId,
+  ) => Promise<void>;
+  /** Drop the HTTP cache for a preview partition. */
+  clearCache: (
+    environmentId: EnvironmentId,
+    profileId?: string,
+    projectId?: ProjectId,
+  ) => Promise<void>;
   /**
    * One-shot config for mounting a preview `<webview>`. Replaces three
    * earlier round-trip calls (`getBrowserPartition`, `getWebviewPreferences`,

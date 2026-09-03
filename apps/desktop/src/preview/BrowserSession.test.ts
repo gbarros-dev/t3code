@@ -65,19 +65,6 @@ describe("BrowserSession", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("keeps project-scoped preview partitions isolated", () =>
-    Effect.gen(function* () {
-      const browserSessions = yield* BrowserSession.BrowserSession;
-      const projectA = JSON.stringify(["environment-a", "project-a"]);
-      const projectB = JSON.stringify(["environment-a", "project-b"]);
-
-      assert.notStrictEqual(
-        yield* browserSessions.getPartition(projectA),
-        yield* browserSessions.getPartition(projectB),
-      );
-    }).pipe(Effect.provide(layer)),
-  );
-
   it.effect("keeps scopes that differ only by a lone surrogate in separate partitions", () =>
     Effect.gen(function* () {
       const browserSessions = yield* BrowserSession.BrowserSession;

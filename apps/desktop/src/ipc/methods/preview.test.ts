@@ -89,18 +89,23 @@ describe("preview IPC methods", () => {
       persistent: true,
     });
     expect(
-      PreviewIpc.resolvePartitionScope("environment::legacy", "project", DEFAULT_BROWSER_PROFILE_ID),
+      PreviewIpc.resolvePartitionScope(
+        "environment::legacy",
+        "project",
+        DEFAULT_BROWSER_PROFILE_ID,
+      ),
     ).toEqual({
       scope: '["environment::legacy","project"]',
       persistent: true,
     });
     expect(
-      PreviewIpc.resolvePartitionScope("environment::legacy", "project", INCOGNITO_BROWSER_PROFILE_ID),
+      PreviewIpc.resolvePartitionScope(
+        "environment::legacy",
+        "project",
+        INCOGNITO_BROWSER_PROFILE_ID,
+      ),
     ).toEqual({
-      scope: JSON.stringify([
-        '["environment::legacy","project"]',
-        "incognito",
-      ]),
+      scope: JSON.stringify(['["environment::legacy","project"]', "incognito"]),
       persistent: false,
       namespace: "profile",
     });
