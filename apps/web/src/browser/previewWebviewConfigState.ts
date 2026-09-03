@@ -65,7 +65,12 @@ export const loadPreviewWebviewConfig = (
   }
 
   return Effect.tryPromise({
-    try: () => bridge.getPreviewConfig({ environmentId, projectId, profileId }),
+    try: () =>
+      bridge.getPreviewConfig({
+        environmentId,
+        projectId,
+        ...(profileId === undefined ? {} : { profileId }),
+      }),
     catch: (cause) => new PreviewWebviewConfigLoadError({ environmentId, projectId, cause }),
   });
 };
