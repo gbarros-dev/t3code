@@ -1810,9 +1810,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   detail: "Grok session changed before the turn completed.",
                 });
               }
-              if (prepared.prefixBrowserTools) {
-                ctx.browserInstructionsPrefixed = true;
-              }
               // Keep prompt settlement atomic with respect to Stop and steering.
               // interruptTurn marks its target before waiting for this lock, so
               // cancellation can still win while queued ACP events are drained.
@@ -1844,6 +1841,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               }
 
               appendPromptResultToTurn(ctx, prepared.turnId, prepared.promptParts, result);
+              if (prepared.prefixBrowserTools) {
+                ctx.browserInstructionsPrefixed = true;
+              }
               ctx.session = {
                 ...ctx.session,
                 status: "running",

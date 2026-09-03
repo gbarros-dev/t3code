@@ -1130,6 +1130,14 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("grok-cancelled-browser-prefix-environment"),
+        threadId,
+        providerSessionId: "grok-cancelled-browser-prefix-provider-session",
+        providerInstanceId: ProviderInstanceId.make("grok-cancelled-browser-prefix-instance"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test-token",
+      });
 
       const runtimeEvents: ProviderRuntimeEvent[] = [];
       const firstTurnStarted = yield* Deferred.make<TurnId>();
@@ -1193,8 +1201,16 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       assert.equal(readySession?.status, "ready");
       assert.isUndefined(readySession?.activeTurnId);
 
+      const prompts = promptTextsFromLog(
+        yield* Effect.promise(() => readJsonLines(requestLogPath)),
+      );
+      assert.equal(prompts.length, 2);
+      assert.include(prompts[0], HOST_BROWSER_TOOL_INSTRUCTIONS.trim());
+      assert.include(prompts[1], HOST_BROWSER_TOOL_INSTRUCTIONS.trim());
+
       yield* Fiber.interrupt(runtimeEventsFiber);
       yield* adapter.stopSession(threadId);
+      McpProviderSession.clearMcpProviderSession(threadId);
     }).pipe(TestClock.withLive),
   );
 
