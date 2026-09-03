@@ -1184,7 +1184,8 @@ describe("ProviderCommandReactor", () => {
           runtimeMode: "approval-required",
           createdAt: now,
         });
-        yield* Effect.promise(() => harness.drain());
+        yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
 
         expect(harness.startSession).toHaveBeenCalledTimes(1);
         expect(harness.startSession.mock.calls[0]?.[0]).toEqual(ThreadId.make("thread-1"));
@@ -1229,7 +1230,8 @@ describe("ProviderCommandReactor", () => {
           runtimeMode: "approval-required",
           createdAt: "2026-01-01T00:00:01.000Z",
         });
-        yield* Effect.promise(() => harness.drain());
+        yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 2));
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
 
         expect(harness.startSession).toHaveBeenCalledTimes(2);
         expect(harness.startSession.mock.calls[1]?.[0]).toEqual(ThreadId.make("thread-2"));
@@ -1244,9 +1246,7 @@ describe("ProviderCommandReactor", () => {
         ).toHaveLength(1);
         expect(harness.sendTurn).toHaveBeenCalledTimes(2);
         expect(
-          harness.runtimeSessions.find(
-            (session) => session.threadId === ThreadId.make("thread-1"),
-          ),
+          harness.runtimeSessions.find((session) => session.threadId === ThreadId.make("thread-1")),
         ).toMatchObject({ cwd: "/tmp/provider-project" });
 
         const readModel = yield* Effect.promise(() => harness.readModel());
