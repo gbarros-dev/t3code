@@ -4142,6 +4142,7 @@ describe("Preview automation snapshots", () => {
         expect(
           expressions.some((expression) => expression.includes('slot.includes("trigger")')),
         ).toBe(true);
+        expect(expressions.some((expression) => expression.includes("getRootNode"))).toBe(true);
       }),
     ),
   );

@@ -4155,6 +4155,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 const root = ${scopeJson} === "document"
                   ? document.documentElement
                   : (document.querySelector('main, [role="main"]') || document.documentElement);
+                const isWithinSearchRoot = (element, searchRoot) => {
+                  let current = element;
+                  while (current) {
+                    if (current === searchRoot) return true;
+                    if (current.parentElement) {
+                      current = current.parentElement;
+                      continue;
+                    }
+                    const rootNode = current.getRootNode();
+                    current = rootNode instanceof ShadowRoot ? rootNode.host : null;
+                  }
+                  return false;
+                };
                 const searchRoots = ${scopeJson} === "document"
                   ? [root]
                   : [
@@ -4171,7 +4184,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                   const elements = injected.querySelectorAll(parsed, document);
                   return searchRoots.some((searchRoot) => {
                     return elements.some((element) => {
-                      if (element !== searchRoot && !searchRoot.contains(element)) return false;
+                      if (!isWithinSearchRoot(element, searchRoot)) return false;
                       const visible = injected.elementState(element, "visible");
                       if (!visible.matches) return false;
                       const slot = element.getAttribute("data-slot") || "";
