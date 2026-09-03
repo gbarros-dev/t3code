@@ -11,6 +11,7 @@ import {
   type BrowserLinkTarget,
   type BrowserProfile,
   type EnvironmentId,
+  type ScopedProjectRef,
   BROWSER_PROFILE_NAME_MAX_LENGTH,
   BROWSER_RECORDING_FRAME_RATES,
   DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW,
@@ -41,6 +42,7 @@ import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { cn, randomUUID } from "~/lib/utils";
 import { useEnvironments } from "~/state/environments";
+import { useProjects } from "~/state/entities";
 import { isElectron } from "../../env";
 
 import { Badge } from "../ui/badge";
@@ -95,17 +97,23 @@ type BrowserProfileDataBridge = Pick<
 export async function clearBrowserProfileData(
   bridge: BrowserProfileDataBridge | null,
   environmentIds: ReadonlyArray<EnvironmentId>,
+  projectRefs: ReadonlyArray<ScopedProjectRef>,
   profileId: string,
 ): Promise<void> {
-  if (bridge === null || environmentIds.length === 0) {
+  if (bridge === null || (environmentIds.length === 0 && projectRefs.length === 0)) {
     throw new Error("Browser profile data is not available to clear.");
   }
-  await Promise.all(
-    environmentIds.flatMap((environmentId) => [
+  await Promise.all([
+    // Keep clearing the pre-project partitions left by older desktop builds.
+    ...environmentIds.flatMap((environmentId) => [
       bridge.clearCookies(environmentId, profileId),
       bridge.clearCache(environmentId, profileId),
     ]),
-  );
+    ...projectRefs.flatMap(({ environmentId, projectId }) => [
+      bridge.clearCookies(environmentId, profileId, projectId),
+      bridge.clearCache(environmentId, profileId, projectId),
+    ]),
+  ]);
 }
 
 export function browserProfileRemovalAvailable(
@@ -625,6 +633,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const settingsHydrated = useClientSettingsHydrated();
   const updateSettings = useUpdatePrimarySettings();
   const { environments, isReady: environmentsReady } = useEnvironments();
+  const projects = useProjects();
   const [profilePendingRemoval, setProfilePendingRemoval] = useState<BrowserProfile | null>(null);
   const [profileRemovalError, setProfileRemovalError] = useState<string | null>(null);
   const [profileRemovalInFlight, setProfileRemovalInFlight] = useState(false);
@@ -676,6 +685,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
       await clearBrowserProfileData(
         previewBridge,
         environmentsReady ? environments.map((environment) => environment.environmentId) : [],
+        projects.map(({ environmentId, id: projectId }) => ({ environmentId, projectId })),
         id,
       );
     } catch {
