@@ -1178,29 +1178,35 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const enableDiagnosticDomains = Effect.fn("PreviewManager.enableDiagnosticDomains")(function* (
     control: BrowserControlSession,
-    wc: Electron.WebContents,
     requested: ReadonlySet<PreviewAutomationSnapshotInclude>,
   ) {
-    const enabled = yield* Ref.get(control.diagnosticDomains);
-    const missing = [...requested].filter((domain) => !enabled.has(domain));
-    if (missing.length === 0) return;
+    if (requested.size === 0) return;
     yield* control.semaphore.withPermit(
-      Effect.forEach(
-        missing,
-        (domain) =>
-          Effect.gen(function* () {
-            const method = DIAGNOSTIC_ENABLE_METHODS[domain];
-            yield* attemptPromise(
-              { operation: `enableDebugger.${method}`, webContentsId: wc.id },
-              () => wc.debugger.sendCommand(method),
-            );
-            yield* Ref.update(
-              control.diagnosticDomains,
-              (current) => new Set([...current, domain]),
-            );
-          }),
-        { discard: true },
-      ),
+      Effect.gen(function* () {
+        const current = (yield* SynchronizedRef.get(controlSessionsRef)).get(control.webContentsId);
+        if (current !== control) return;
+        const enabled = yield* Ref.get(control.diagnosticDomains);
+        const missing = [...requested].filter((domain) => !enabled.has(domain));
+        if (missing.length === 0) return;
+        const currentWc = webContents.fromId(control.webContentsId);
+        if (!currentWc || currentWc.isDestroyed()) return;
+        yield* Effect.forEach(
+          missing,
+          (domain) =>
+            Effect.gen(function* () {
+              const method = DIAGNOSTIC_ENABLE_METHODS[domain];
+              yield* attemptPromise(
+                { operation: `enableDebugger.${method}`, webContentsId: currentWc.id },
+                () => currentWc.debugger.sendCommand(method),
+              );
+              yield* Ref.update(
+                control.diagnosticDomains,
+                (current) => new Set([...current, domain]),
+              );
+            }),
+          { discard: true },
+        );
+      }),
     );
   });
 
@@ -1208,7 +1214,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     wc: Electron.WebContents,
     requestedDiagnosticDomains: ReadonlySet<PreviewAutomationSnapshotInclude> = new Set(),
   ) {
-    return yield* SynchronizedRef.modifyEffect(
+    const control = yield* SynchronizedRef.modifyEffect(
       controlSessionsRef,
       (
         sessions,
@@ -1218,9 +1224,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       > => {
         const existing = sessions.get(wc.id);
         if (existing) {
-          return enableDiagnosticDomains(existing, wc, requestedDiagnosticDomains).pipe(
-            Effect.as([existing, sessions] as const),
-          );
+          return Effect.succeed([existing, sessions] as const);
         }
         if (wc.isDevToolsOpened()) {
           return Effect.fail(
@@ -1361,6 +1365,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         return createControlSession();
       },
     );
+    yield* enableDiagnosticDomains(control, requestedDiagnosticDomains);
+    return control;
   });
 
   const pushAction = (tabId: string, event: PreviewAutomationActionEvent) =>
@@ -1401,9 +1407,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const withControlSession = Effect.fn("PreviewManager.withControlSession")(function* <A>(
     tabId: string,
-    wc: Electron.WebContents,
     action: string,
-    use: (send: SendCommand, sendCleanup: SendCommand) => Effect.Effect<A, PreviewManagerError>,
+    use: (
+      wc: Electron.WebContents,
+      send: SendCommand,
+      sendCleanup: SendCommand,
+    ) => Effect.Effect<A, PreviewManagerError>,
     requestedDiagnosticDomains: ReadonlySet<PreviewAutomationSnapshotInclude> = new Set(),
   ) {
     const sequence = yield* nextCounter(actionSequenceRef);
@@ -1417,8 +1426,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     yield* pushAction(tabId, actionEvent);
     const epoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-    const control = yield* ensureControlSession(wc, requestedDiagnosticDomains);
-    const execute = Effect.fn("PreviewManager.executeControlAction")(function* () {
+    const requestedWc = yield* requireWebContents(tabId);
+    const requestedControl = yield* ensureControlSession(requestedWc, requestedDiagnosticDomains);
+    const activeWc = yield* requireWebContents(tabId);
+    const currentControl = (yield* SynchronizedRef.get(controlSessionsRef)).get(activeWc.id);
+    const control =
+      activeWc === requestedWc && currentControl === requestedControl
+        ? requestedControl
+        : yield* ensureControlSession(activeWc, requestedDiagnosticDomains);
+    const execute = Effect.fn("PreviewManager.executeControlAction")(function* (
+      controlWc: Electron.WebContents,
+    ) {
       yield* update(tabId, { controller: "agent" });
       const send: SendCommand = Effect.fn("PreviewManager.sendCommand")(
         function* (method, commandParams) {
@@ -1427,11 +1445,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             return yield* new PreviewAutomationControlInterruptedError({
               operation: action,
               tabId,
-              webContentsId: wc.id,
+              webContentsId: controlWc.id,
             });
           }
           const result = yield* attemptPromise(
-            { operation: `${action}.${method}`, tabId, webContentsId: wc.id },
+            { operation: `${action}.${method}`, tabId, webContentsId: controlWc.id },
             () => control.debugger.sendCommand(method, commandParams),
           );
           const after = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
@@ -1439,7 +1457,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             return yield* new PreviewAutomationControlInterruptedError({
               operation: action,
               tabId,
-              webContentsId: wc.id,
+              webContentsId: controlWc.id,
             });
           }
           return result;
@@ -1454,13 +1472,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             {
               operation: `${action}.cleanup.${method}`,
               tabId,
-              webContentsId: wc.id,
+              webContentsId: controlWc.id,
             },
             () => control.debugger.sendCommand(method, commandParams),
           );
         },
       );
-      return yield* use(send, sendCleanup);
+      return yield* use(controlWc, send, sendCleanup);
     });
     const finalize = Effect.fn("PreviewManager.finalizeControlAction")(function* (
       exit: Exit.Exit<A, PreviewManagerError>,
@@ -1494,7 +1512,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const tabs = yield* SynchronizedRef.get(tabsRef);
       if (tabs.has(tabId)) yield* update(tabId, { controller: "none" });
     });
-    return yield* control.semaphore.withPermit(execute().pipe(Effect.onExit(finalize)));
+    return yield* control.semaphore.withPermit(execute(activeWc).pipe(Effect.onExit(finalize)));
   });
 
   const evaluateWithDebugger = <A = unknown>(
@@ -3698,12 +3716,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     include: ReadonlyArray<PreviewAutomationSnapshotInclude> = [],
   ) {
-    const wc = yield* requireWebContents(tabId);
     return yield* withControlSession(
       tabId,
-      wc,
       "snapshot",
-      (send) => captureAutomationSnapshot(tabId, wc, send, include),
+      (wc, send) => captureAutomationSnapshot(tabId, wc, send, include),
       new Set(include),
     );
   });
@@ -3836,8 +3852,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationClickInput,
   ) {
-    const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "click", (send) =>
+    yield* withControlSession(tabId, "click", (_wc, send) =>
       performAutomationClick(tabId, input, send),
     );
   });
@@ -3962,8 +3977,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationTypeInput,
   ) {
-    const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "type", (send) =>
+    yield* withControlSession(tabId, "type", (_wc, send) =>
       performAutomationType(tabId, input, send),
     );
   });
@@ -4024,8 +4038,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationPressInput,
   ) {
-    const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "press", (send, sendCleanup) =>
+    yield* withControlSession(tabId, "press", (wc, send, sendCleanup) =>
       performAutomationPress(tabId, wc, input, send, sendCleanup),
     );
   });
@@ -4080,8 +4093,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationScrollInput,
   ) {
-    const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "scroll", (send) =>
+    yield* withControlSession(tabId, "scroll", (_wc, send) =>
       performAutomationScroll(tabId, input, send),
     );
   });
@@ -4116,8 +4128,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationEvaluateInput,
   ) {
-    const wc = yield* requireWebContents(tabId);
-    return yield* withControlSession(tabId, wc, "evaluate", (send) =>
+    return yield* withControlSession(tabId, "evaluate", (_wc, send) =>
       performAutomationEvaluate(tabId, input, send),
     );
   });
@@ -4188,7 +4199,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                       const visible = injected.elementState(element, "visible");
                       if (!visible.matches) return false;
                       const slot = element.getAttribute("data-slot") || "";
-                      if (slot.includes("trigger")) return false;
+                      if (
+                        slot === "dialog-trigger" ||
+                        slot === "alert-dialog-trigger" ||
+                        slot === "command-dialog-trigger"
+                      ) {
+                        return false;
+                      }
                       return true;
                     });
                   });
@@ -4232,8 +4249,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationWaitForInput,
   ) {
-    const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "waitFor", (send) =>
+    yield* withControlSession(tabId, "waitFor", (_wc, send) =>
       performAutomationWaitFor(tabId, input, send),
     );
   });

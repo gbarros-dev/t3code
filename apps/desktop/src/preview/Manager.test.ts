@@ -4140,8 +4140,11 @@ describe("Preview automation snapshots", () => {
           expressions.some((expression) => expression.includes('data-slot$="-viewport"')),
         ).toBe(false);
         expect(
-          expressions.some((expression) => expression.includes('slot.includes("trigger")')),
+          expressions.some((expression) => expression.includes('slot === "dialog-trigger"')),
         ).toBe(true);
+        expect(
+          expressions.some((expression) => expression.includes('slot.includes("trigger")')),
+        ).toBe(false);
         expect(expressions.some((expression) => expression.includes("getRootNode"))).toBe(true);
       }),
     ),
