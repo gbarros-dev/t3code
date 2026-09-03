@@ -4048,6 +4048,9 @@ describe("Preview automation snapshots", () => {
         expect(slim.networkEntries).toEqual([]);
         const slimMethods = sendCommand.mock.calls.map(([method]) => method);
         expect(slimMethods).not.toContain("Accessibility.getFullAXTree");
+        expect(slimMethods).not.toContain("Accessibility.enable");
+        expect(slimMethods).not.toContain("Network.enable");
+        expect(slimMethods).not.toContain("Log.enable");
         expect(
           sendCommand.mock.calls.some(
             ([method, params]) =>
@@ -4065,6 +4068,13 @@ describe("Preview automation snapshots", () => {
         expect(withAx.accessibilityTree).toEqual({ nodes: [{ role: "main" }] });
         expect(sendCommand.mock.calls.map(([method]) => method)).toContain(
           "Accessibility.getFullAXTree",
+        );
+        expect(sendCommand.mock.calls.map(([method]) => method)).toContain("Accessibility.enable");
+
+        sendCommand.mockClear();
+        yield* manager.automationSnapshot("tab_snapshot", ["console", "network"]);
+        expect(sendCommand.mock.calls.map(([method]) => method)).toEqual(
+          expect.arrayContaining(["Log.enable", "Network.enable"]),
         );
       }),
     ),
@@ -4116,7 +4126,10 @@ describe("Preview automation snapshots", () => {
 
         yield* manager.createTab("tab_wait");
         yield* manager.registerWebview("tab_wait", 42);
-        yield* manager.automationWaitFor("tab_wait", { text: "Dashboard" });
+        yield* manager.automationWaitFor("tab_wait", {
+          locator: "text=Dashboard",
+          text: "Dashboard",
+        });
         expect(expressions.some((expression) => expression.includes('main, [role="main"]'))).toBe(
           true,
         );
@@ -4126,6 +4139,9 @@ describe("Preview automation snapshots", () => {
         expect(
           expressions.some((expression) => expression.includes('data-slot$="-viewport"')),
         ).toBe(false);
+        expect(
+          expressions.some((expression) => expression.includes('slot.includes("trigger")')),
+        ).toBe(true);
       }),
     ),
   );

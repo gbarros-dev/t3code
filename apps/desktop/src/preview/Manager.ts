@@ -446,12 +446,19 @@ interface BrowserControlSession {
   readonly debugger: Electron.Debugger;
   readonly semaphore: Semaphore.Semaphore;
   readonly scope: Scope.Closeable;
+  readonly diagnosticDomains: Ref.Ref<ReadonlySet<PreviewAutomationSnapshotInclude>>;
   readonly onMessage: (
     event: Electron.Event,
     method: string,
     params: Record<string, unknown>,
   ) => void;
 }
+
+const DIAGNOSTIC_ENABLE_METHODS = {
+  ax: "Accessibility.enable",
+  console: "Log.enable",
+  network: "Network.enable",
+} as const satisfies Record<PreviewAutomationSnapshotInclude, string>;
 
 interface BrowserDiagnostics {
   readonly consoleEntries: ReadonlyArray<PreviewAutomationConsoleEntry>;
@@ -1017,7 +1024,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     webContentsId: number,
     method: string,
     params: Record<string, unknown>,
+    diagnosticDomains: ReadonlySet<PreviewAutomationSnapshotInclude>,
   ) {
+    const capturesConsole =
+      diagnosticDomains.has("console") &&
+      (method === "Runtime.consoleAPICalled" ||
+        method === "Runtime.exceptionThrown" ||
+        method === "Log.entryAdded");
+    const capturesNetwork = diagnosticDomains.has("network") && method.startsWith("Network.");
+    if (!capturesConsole && !capturesNetwork) return;
     const timestamp = yield* currentIso;
     yield* Ref.update(diagnosticsRef, (allDiagnostics) => {
       const current = allDiagnostics.get(webContentsId);
@@ -1161,8 +1176,37 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const enableDiagnosticDomains = Effect.fn("PreviewManager.enableDiagnosticDomains")(function* (
+    control: BrowserControlSession,
+    wc: Electron.WebContents,
+    requested: ReadonlySet<PreviewAutomationSnapshotInclude>,
+  ) {
+    const enabled = yield* Ref.get(control.diagnosticDomains);
+    const missing = [...requested].filter((domain) => !enabled.has(domain));
+    if (missing.length === 0) return;
+    yield* control.semaphore.withPermit(
+      Effect.forEach(
+        missing,
+        (domain) =>
+          Effect.gen(function* () {
+            const method = DIAGNOSTIC_ENABLE_METHODS[domain];
+            yield* attemptPromise(
+              { operation: `enableDebugger.${method}`, webContentsId: wc.id },
+              () => wc.debugger.sendCommand(method),
+            );
+            yield* Ref.update(
+              control.diagnosticDomains,
+              (current) => new Set([...current, domain]),
+            );
+          }),
+        { discard: true },
+      ),
+    );
+  });
+
   const ensureControlSession = Effect.fn("PreviewManager.ensureControlSession")(function* (
     wc: Electron.WebContents,
+    requestedDiagnosticDomains: ReadonlySet<PreviewAutomationSnapshotInclude> = new Set(),
   ) {
     return yield* SynchronizedRef.modifyEffect(
       controlSessionsRef,
@@ -1173,7 +1217,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         PreviewManagerError
       > => {
         const existing = sessions.get(wc.id);
-        if (existing) return Effect.succeed([existing, sessions] as const);
+        if (existing) {
+          return enableDiagnosticDomains(existing, wc, requestedDiagnosticDomains).pipe(
+            Effect.as([existing, sessions] as const),
+          );
+        }
         if (wc.isDevToolsOpened()) {
           return Effect.fail(
             new PreviewAutomationDevToolsOpenError({
@@ -1190,6 +1238,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         }
         const createControlSession = Effect.fn("PreviewManager.createControlSession")(function* () {
           const semaphore = yield* Semaphore.make(1);
+          const diagnosticDomains = yield* Ref.make<ReadonlySet<PreviewAutomationSnapshotInclude>>(
+            new Set(requestedDiagnosticDomains),
+          );
           const scope = yield* Scope.fork(parentScope, "sequential");
           const wcDebugger = wc.debugger;
           const handleDebuggerMessage = Effect.fnUntraced(function* (
@@ -1237,7 +1288,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 }
               }
             }
-            yield* captureDiagnosticMessage(wc.id, method, params);
+            const activeDiagnosticDomains = yield* Ref.get(diagnosticDomains);
+            yield* captureDiagnosticMessage(wc.id, method, params, activeDiagnosticDomains);
           });
           const onMessage: BrowserControlSession["onMessage"] = (_event, method, params) => {
             runFork(handleDebuggerMessage(method, params));
@@ -1264,6 +1316,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             debugger: wcDebugger,
             semaphore,
             scope,
+            diagnosticDomains,
             onMessage,
           };
           const initialize = Effect.fn("PreviewManager.initializeControlSession")(function* () {
@@ -1281,12 +1334,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               wcDebugger.attach("1.3");
             });
             yield* Effect.all(
-              ["Runtime.enable", "Accessibility.enable", "Network.enable", "Log.enable"].map(
-                (method) =>
-                  attemptPromise(
-                    { operation: `initializeDebugger.${method}`, webContentsId: wc.id },
-                    () => wcDebugger.sendCommand(method),
-                  ),
+              [
+                "Runtime.enable",
+                ...[...requestedDiagnosticDomains].map(
+                  (domain) => DIAGNOSTIC_ENABLE_METHODS[domain],
+                ),
+              ].map((method) =>
+                attemptPromise(
+                  { operation: `initializeDebugger.${method}`, webContentsId: wc.id },
+                  () => wcDebugger.sendCommand(method),
+                ),
               ),
               { concurrency: "unbounded", discard: true },
             );
@@ -1347,6 +1404,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     wc: Electron.WebContents,
     action: string,
     use: (send: SendCommand, sendCleanup: SendCommand) => Effect.Effect<A, PreviewManagerError>,
+    requestedDiagnosticDomains: ReadonlySet<PreviewAutomationSnapshotInclude> = new Set(),
   ) {
     const sequence = yield* nextCounter(actionSequenceRef);
     const startedAt = yield* currentIso;
@@ -1359,7 +1417,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     yield* pushAction(tabId, actionEvent);
     const epoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-    const control = yield* ensureControlSession(wc);
+    const control = yield* ensureControlSession(wc, requestedDiagnosticDomains);
     const execute = Effect.fn("PreviewManager.executeControlAction")(function* () {
       yield* update(tabId, { controller: "agent" });
       const send: SendCommand = Effect.fn("PreviewManager.sendCommand")(
@@ -3498,7 +3556,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const includeConsole = include.includes("console");
       const includeNetwork = include.includes("network");
       yield* send("Runtime.enable");
-      if (includeAx) yield* send("Accessibility.enable");
       const page = yield* evaluateWithDebugger<{
         url: string;
         title: string;
@@ -3642,8 +3699,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     include: ReadonlyArray<PreviewAutomationSnapshotInclude> = [],
   ) {
     const wc = yield* requireWebContents(tabId);
-    return yield* withControlSession(tabId, wc, "snapshot", (send) =>
-      captureAutomationSnapshot(tabId, wc, send, include),
+    return yield* withControlSession(
+      tabId,
+      wc,
+      "snapshot",
+      (send) => captureAutomationSnapshot(tabId, wc, send, include),
+      new Set(include),
     );
   });
 
@@ -4113,10 +4174,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                       if (element !== searchRoot && !searchRoot.contains(element)) return false;
                       const visible = injected.elementState(element, "visible");
                       if (!visible.matches) return false;
-                      if (element.getAttribute("role") === "dialog") {
-                        const slot = element.getAttribute("data-slot") || "";
-                        if (slot.includes("trigger")) return false;
-                      }
+                      const slot = element.getAttribute("data-slot") || "";
+                      if (slot.includes("trigger")) return false;
                       return true;
                     });
                   });
