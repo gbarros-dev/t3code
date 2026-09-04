@@ -260,7 +260,7 @@ const currentStatus = async (
         ...viewportStatus,
       },
       snapshot?.navStatus,
-      { preferLiveAvailability: true },
+      { preferLiveStatus: true },
     );
   }
   const navStatus = snapshot?.navStatus;

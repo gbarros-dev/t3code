@@ -5,17 +5,16 @@ import type { PreviewAutomationStatus, PreviewNavStatus } from "@t3tools/contrac
  * Keep the requested URL so Retry/navigate still have something useful; the
  * chrome-error interstitial is not a navigable address.
  *
- * When a live desktop status already says the guest is available or still
- * loading, keep it. A stale LoadFailed snapshot can lag a retry that is
- * attaching or already in flight.
+ * Keep a live desktop status intact. A stale LoadFailed snapshot can lag a
+ * retry or a newer failed navigation.
  */
 export function applyPreviewLoadFailureToAutomationStatus(
   status: PreviewAutomationStatus,
   navStatus: PreviewNavStatus | undefined,
-  options?: { readonly preferLiveAvailability?: boolean },
+  options?: { readonly preferLiveStatus?: boolean },
 ): PreviewAutomationStatus {
   if (navStatus?._tag !== "LoadFailed") return status;
-  if (options?.preferLiveAvailability && (status.available || status.loading)) return status;
+  if (options?.preferLiveStatus) return status;
   return {
     ...status,
     available: false,

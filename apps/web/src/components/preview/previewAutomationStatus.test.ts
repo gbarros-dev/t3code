@@ -69,7 +69,7 @@ describe("previewAutomationStatus", () => {
           code: -102,
           description: "ERR_CONNECTION_REFUSED",
         },
-        { preferLiveAvailability: true },
+        { preferLiveStatus: true },
       ),
     ).toEqual(healthy);
   });
@@ -91,8 +91,30 @@ describe("previewAutomationStatus", () => {
           code: -102,
           description: "ERR_CONNECTION_REFUSED",
         },
-        { preferLiveAvailability: true },
+        { preferLiveStatus: true },
       ),
     ).toEqual(attaching);
+  });
+
+  it("keeps a newer live failure instead of the stale snapshot", () => {
+    const liveFailure = {
+      ...healthy,
+      available: false,
+      url: "http://localhost:4173/",
+      title: "ERR_NAME_NOT_RESOLVED",
+    };
+    expect(
+      applyPreviewLoadFailureToAutomationStatus(
+        liveFailure,
+        {
+          _tag: "LoadFailed",
+          url: "http://localhost:5173/",
+          title: "localhost:5173",
+          code: -102,
+          description: "ERR_CONNECTION_REFUSED",
+        },
+        { preferLiveStatus: true },
+      ),
+    ).toEqual(liveFailure);
   });
 });

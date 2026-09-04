@@ -286,31 +286,33 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             <TooltipPopup side="top">Open in right panel</TooltipPopup>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={desktopOverlay?.pictureInPicture ? "secondary" : "ghost"}
-                  size="icon-xs"
-                  aria-label={
-                    desktopOverlay?.pictureInPicture
-                      ? "Close popped-out preview"
-                      : "Pop preview into separate window"
-                  }
-                  disabled={
-                    !desktopOverlay?.hasWebContents ||
-                    (isUnreachable && !desktopOverlay.pictureInPicture)
-                  }
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={toggleNativePictureInPicture}
-                />
-              }
-            >
-              <PictureInPicture2 />
+            <TooltipTrigger render={<span className="flex shrink-0" />}>
+              <Button
+                variant={desktopOverlay?.pictureInPicture ? "secondary" : "ghost"}
+                size="icon-xs"
+                aria-label={
+                  desktopOverlay?.pictureInPicture
+                    ? "Close popped-out preview"
+                    : "Pop preview into separate window"
+                }
+                disabled={
+                  !desktopOverlay?.hasWebContents ||
+                  (isUnreachable && !desktopOverlay.pictureInPicture)
+                }
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={toggleNativePictureInPicture}
+              >
+                <PictureInPicture2 />
+              </Button>
             </TooltipTrigger>
             <TooltipPopup side="top">
               {desktopOverlay?.pictureInPicture
                 ? "Close separate window"
-                : "Pop into separate window"}
+                : isUnreachable
+                  ? "Retry preview before popping out"
+                  : !desktopOverlay?.hasWebContents
+                    ? "Preview is reconnecting"
+                    : "Pop into separate window"}
             </TooltipPopup>
           </Tooltip>
           <Tooltip>
@@ -348,7 +350,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           className="absolute inset-0"
         />
         <div className="pointer-events-none absolute inset-0 z-[49] rounded-xl ring-1 ring-inset ring-border/80" />
-        {isUnreachable && navStatus._tag === "LoadFailed" ? (
+        {isUnreachable && navStatus._tag === "LoadFailed" && desktopOverlay?.hasWebContents ? (
           <PreviewMiniPlayerUnreachable
             url={navStatus.url}
             description={navStatus.description}
