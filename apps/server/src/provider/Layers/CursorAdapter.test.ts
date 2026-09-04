@@ -110,7 +110,12 @@ function promptTextsFromLog(requests: ReadonlyArray<Record<string, unknown>>): s
     const prompt = (entry.params as { prompt?: ReadonlyArray<{ type?: string; text?: string }> })
       ?.prompt;
     return (prompt ?? [])
-      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .filter(
+        (part) =>
+          part.type === "text" &&
+          typeof part.text === "string" &&
+          !part.text.startsWith("<runtime_info>"),
+      )
       .map((part) => part.text ?? "");
   });
 }

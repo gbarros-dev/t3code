@@ -934,25 +934,16 @@ export function makeCursorAdapter(
 
     const sendTurn: CursorAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const { ctx, steeringTurnId, turnId } = yield* withThreadLock(
-          input.threadId,
-          Effect.gen(function* () {
-            const ctx = yield* requireSession(input.threadId);
-            // Reserve the turn while holding the thread lock. Without this,
-            // two initial sends can both observe an idle session before the
-            // first one yields for its turn id and both start new turns.
-            const steeringTurnId = ctx.promptsInFlight > 0 ? ctx.activeTurnId : undefined;
-            const turnId = steeringTurnId ?? TurnId.make(yield* randomUUIDv4);
-            // Count this prompt immediately so a superseded in-flight prompt
-            // resolving from here on does not settle the turn; the matching
-            // decrement is the `ensuring` below.
-            ctx.promptsInFlight += 1;
-            if (steeringTurnId === undefined) {
-              ctx.activeTurnId = turnId;
-            }
-            return { ctx, steeringTurnId, turnId };
-          }),
-        );
+        const ctx = yield* requireSession(input.threadId);
+        // A sendTurn while a prompt is in flight is a steer: the agent folds
+        // the new prompt into the ongoing work, so the active turn id is
+        // reused instead of opening a new turn.
+        const steeringTurnId = ctx.promptsInFlight > 0 ? ctx.activeTurnId : undefined;
+        const turnId = steeringTurnId ?? TurnId.make(yield* randomUUIDv4);
+        // Count this prompt immediately so a superseded in-flight prompt
+        // resolving from here on does not settle the turn; the matching
+        // decrement is the `ensuring` below.
+        ctx.promptsInFlight += 1;
 
         return yield* Effect.gen(function* () {
           const turnModelSelection =
