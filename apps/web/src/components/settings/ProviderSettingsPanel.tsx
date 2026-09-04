@@ -195,7 +195,7 @@ interface ProviderSettingsTarget {
 
 export function ProviderSettingsPanel(target: ProviderSettingsTarget) {
   return (
-    <SettingsPageContainer width="wide" className="gap-8">
+    <SettingsPageContainer width="expanded" className="gap-8">
       <ProviderSettingsPanelContent
         key={`${target.environmentId ?? ""}:${target.instanceId ?? ""}`}
         {...target}
