@@ -111,6 +111,19 @@ describe("importedBrowserProfileName", () => {
       `${"C".repeat(30)} ${"W".repeat(15)} 2`,
     );
   });
+
+  it("does not split an astral character at the profile name limit", () => {
+    const sourceName = `${"C".repeat(47)}🚀`;
+    expect(importedBrowserProfileName(sourceName, "Work", new Set())).toBe("C".repeat(47));
+  });
+
+  it("does not split an astral character while reserving suffix space", () => {
+    const sourceName = `${"C".repeat(45)}🚀`;
+    const unsuffixedName = `${sourceName}`;
+    expect(importedBrowserProfileName(sourceName, "Work", new Set([unsuffixedName]))).toBe(
+      `${"C".repeat(45)} 2`,
+    );
+  });
 });
 
 // Mirrors `BrowserImportFailedError.message`, which IPC flattens to a string

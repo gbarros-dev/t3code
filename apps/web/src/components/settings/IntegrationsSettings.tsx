@@ -168,18 +168,30 @@ export const importFailureReason = (cause: unknown): BrowserImportFailureReason 
   );
 };
 
+function truncateBrowserProfileName(name: string, maxLength: number): string {
+  const truncated = name.slice(0, maxLength);
+  const lastCodeUnit = truncated.charCodeAt(truncated.length - 1);
+  return lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff ? truncated.slice(0, -1) : truncated;
+}
+
 export function importedBrowserProfileName(
   sourceName: string,
   sourceProfileName: string,
   takenNames: ReadonlySet<string>,
 ): string {
   const baseName = `${sourceName} ${sourceProfileName}`;
-  const unsuffixedName = baseName.slice(0, BROWSER_PROFILE_NAME_MAX_LENGTH).trimEnd();
+  const unsuffixedName = truncateBrowserProfileName(
+    baseName,
+    BROWSER_PROFILE_NAME_MAX_LENGTH,
+  ).trimEnd();
   if (!takenNames.has(unsuffixedName)) return unsuffixedName;
 
   for (let index = 2; ; index += 1) {
     const suffix = ` ${index}`;
-    const stem = baseName.slice(0, BROWSER_PROFILE_NAME_MAX_LENGTH - suffix.length).trimEnd();
+    const stem = truncateBrowserProfileName(
+      baseName,
+      BROWSER_PROFILE_NAME_MAX_LENGTH - suffix.length,
+    ).trimEnd();
     const name = `${stem}${suffix}`;
     if (!takenNames.has(name)) return name;
   }
