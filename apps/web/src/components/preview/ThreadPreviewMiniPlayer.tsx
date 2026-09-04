@@ -257,7 +257,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             }
       }
     >
-      <div className="group pointer-events-auto absolute right-2 top-2 z-[49] size-3">
+      <div className="group pointer-events-auto absolute right-2 top-2 z-[50] size-3">
         <div
           aria-hidden="true"
           className="absolute right-0 top-0 size-2 rounded-full bg-foreground/25 shadow-sm ring-1 ring-background/70 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
