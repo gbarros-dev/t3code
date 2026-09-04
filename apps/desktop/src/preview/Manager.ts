@@ -1505,6 +1505,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const tabs = yield* SynchronizedRef.get(tabsRef);
       if (tabs.has(tabId)) yield* update(tabId, { controller: "none" });
     });
+    const finalized = yield* Ref.make(false);
+    const finalizeOnce = Effect.fn("PreviewManager.finalizeControlActionOnce")(function* (
+      exit: Exit.Exit<A, PreviewManagerError>,
+    ) {
+      const wasFinalized = yield* Ref.getAndSet(finalized, true);
+      if (!wasFinalized) yield* finalize(exit);
+    });
     const acquireAndExecute = (remainingAttempts: number): Effect.Effect<A, PreviewManagerError> =>
       Effect.gen(function* () {
         const controlWc = yield* requireWebContents(tabId);
@@ -1514,7 +1521,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             const liveWc = yield* requireWebContents(tabId);
             const liveControl = (yield* SynchronizedRef.get(controlSessionsRef)).get(liveWc.id);
             if (liveWc !== controlWc || liveControl !== control) return Option.none<A>();
-            return Option.some(yield* execute(controlWc, control));
+            return Option.some(
+              yield* execute(controlWc, control).pipe(Effect.onExit(finalizeOnce)),
+            );
           }),
         );
         if (Option.isSome(result)) return result.value;
@@ -1527,7 +1536,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           webContentsId: controlWc.id,
         });
       });
-    return yield* acquireAndExecute(3).pipe(Effect.onExit(finalize));
+    return yield* acquireAndExecute(3).pipe(Effect.onExit(finalizeOnce));
   });
 
   const evaluateWithDebugger = <A = unknown>(

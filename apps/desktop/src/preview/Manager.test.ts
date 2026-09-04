@@ -4121,6 +4121,61 @@ describe("Preview automation snapshots", () => {
     ),
   );
 
+  effectIt.effect("does not clear agent control after a pipelined action starts", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let releaseFirst: () => void = () => undefined;
+        let releaseSecond: () => void = () => undefined;
+        const firstEvaluation = new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+        const secondEvaluation = new Promise<void>((resolve) => {
+          releaseSecond = resolve;
+        });
+        let evaluationCount = 0;
+        const sendCommand = vi.fn(async (method: string) => {
+          if (method !== "Runtime.evaluate") return undefined;
+          evaluationCount += 1;
+          await (evaluationCount === 1 ? firstEvaluation : secondEvaluation);
+          return { result: { value: null } };
+        });
+        fromId.mockReturnValue(mockAutomationWebContents(sendCommand, async () => snapshotImage));
+        const controllers: string[] = [];
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            controllers.push(state.controller);
+          }),
+        );
+
+        yield* manager.createTab("tab_pipeline");
+        yield* manager.registerWebview("tab_pipeline", 42);
+        yield* Effect.yieldNow;
+        const first = yield* manager
+          .automationEvaluate("tab_pipeline", { expression: "1" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.yieldNow;
+        expect(evaluationCount).toBe(1);
+
+        const second = yield* manager
+          .automationEvaluate("tab_pipeline", { expression: "2" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.yieldNow;
+        expect(evaluationCount).toBe(1);
+
+        releaseFirst();
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        expect(evaluationCount).toBe(2);
+        expect(controllers.at(-1)).toBe("agent");
+
+        releaseSecond();
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+        expect(controllers.at(-1)).toBe("none");
+      }),
+    ),
+  );
+
   effectIt.effect("omits ax, console, and network unless include asks", () =>
     withManager((manager) =>
       Effect.gen(function* () {
