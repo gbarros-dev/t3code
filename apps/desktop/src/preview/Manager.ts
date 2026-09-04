@@ -1197,7 +1197,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               const method = DIAGNOSTIC_ENABLE_METHODS[domain];
               yield* attemptPromise(
                 { operation: `enableDebugger.${method}`, webContentsId: currentWc.id },
-                () => currentWc.debugger.sendCommand(method),
+                () => control.debugger.sendCommand(method),
               );
               yield* Ref.update(
                 control.diagnosticDomains,
@@ -1426,16 +1426,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     yield* pushAction(tabId, actionEvent);
     const epoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-    const requestedWc = yield* requireWebContents(tabId);
-    const requestedControl = yield* ensureControlSession(requestedWc, requestedDiagnosticDomains);
-    const activeWc = yield* requireWebContents(tabId);
-    const currentControl = (yield* SynchronizedRef.get(controlSessionsRef)).get(activeWc.id);
-    const control =
-      activeWc === requestedWc && currentControl === requestedControl
-        ? requestedControl
-        : yield* ensureControlSession(activeWc, requestedDiagnosticDomains);
     const execute = Effect.fn("PreviewManager.executeControlAction")(function* (
       controlWc: Electron.WebContents,
+      control: BrowserControlSession,
     ) {
       yield* update(tabId, { controller: "agent" });
       const send: SendCommand = Effect.fn("PreviewManager.sendCommand")(
@@ -1512,7 +1505,29 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const tabs = yield* SynchronizedRef.get(tabsRef);
       if (tabs.has(tabId)) yield* update(tabId, { controller: "none" });
     });
-    return yield* control.semaphore.withPermit(execute(activeWc).pipe(Effect.onExit(finalize)));
+    const acquireAndExecute = (remainingAttempts: number): Effect.Effect<A, PreviewManagerError> =>
+      Effect.gen(function* () {
+        const controlWc = yield* requireWebContents(tabId);
+        const control = yield* ensureControlSession(controlWc, requestedDiagnosticDomains);
+        const result = yield* control.semaphore.withPermit(
+          Effect.gen(function* () {
+            const liveWc = yield* requireWebContents(tabId);
+            const liveControl = (yield* SynchronizedRef.get(controlSessionsRef)).get(liveWc.id);
+            if (liveWc !== controlWc || liveControl !== control) return Option.none<A>();
+            return Option.some(yield* execute(controlWc, control));
+          }),
+        );
+        if (Option.isSome(result)) return result.value;
+        if (remainingAttempts > 1) {
+          return yield* Effect.suspend(() => acquireAndExecute(remainingAttempts - 1));
+        }
+        return yield* new PreviewAutomationControlInterruptedError({
+          operation: action,
+          tabId,
+          webContentsId: controlWc.id,
+        });
+      });
+    return yield* acquireAndExecute(3).pipe(Effect.onExit(finalize));
   });
 
   const evaluateWithDebugger = <A = unknown>(

@@ -3998,9 +3998,13 @@ describe("Preview automation snapshots", () => {
   const mockAutomationWebContents = (
     sendCommand: ReturnType<typeof vi.fn>,
     capturePage: () => Promise<typeof snapshotImage>,
+    options: {
+      readonly id?: number;
+      readonly isDebuggerAttached?: () => boolean;
+    } = {},
   ) =>
     ({
-      id: 42,
+      id: options.id ?? 42,
       isDestroyed: () => false,
       getType: () => "webview",
       getURL: () => "https://example.com",
@@ -4018,7 +4022,7 @@ describe("Preview automation snapshots", () => {
       setWindowOpenHandler: vi.fn(),
       capturePage,
       debugger: {
-        isAttached: () => false,
+        isAttached: options.isDebuggerAttached ?? (() => false),
         attach: vi.fn(),
         sendCommand,
         on: vi.fn(),
@@ -4026,10 +4030,101 @@ describe("Preview automation snapshots", () => {
       },
     }) as never;
 
+  effectIt.effect("finalizes the timeline when control-session acquisition fails", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let debuggerAttached = true;
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate" ? { result: { value: pageValue } } : undefined,
+        );
+        fromId.mockReturnValue(
+          mockAutomationWebContents(sendCommand, async () => snapshotImage, {
+            isDebuggerAttached: () => debuggerAttached,
+          }),
+        );
+
+        yield* manager.createTab("tab_acquisition_failure");
+        yield* manager.registerWebview("tab_acquisition_failure", 42);
+        const exit = yield* Effect.exit(
+          manager.automationEvaluate("tab_acquisition_failure", { expression: "location.href" }),
+        );
+        expect(Exit.isFailure(exit)).toBe(true);
+
+        debuggerAttached = false;
+        const snapshot = yield* manager.automationSnapshot("tab_acquisition_failure");
+        expect(snapshot.actionTimeline).toContainEqual(
+          expect.objectContaining({
+            action: "evaluate",
+            status: "failed",
+            completedAt: expect.any(String),
+          }),
+        );
+        expect(snapshot.actionTimeline).not.toContainEqual(
+          expect.objectContaining({ action: "evaluate", status: "running" }),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("retries against the live webview when guests swap during acquisition", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let release42: () => void = () => undefined;
+        let release43: () => void = () => undefined;
+        const diagnostic42 = new Promise<void>((resolve) => {
+          release42 = resolve;
+        });
+        const diagnostic43 = new Promise<void>((resolve) => {
+          release43 = resolve;
+        });
+        const makeSendCommand = (diagnostic: Promise<void> | null) =>
+          vi.fn(async (method: string) => {
+            if (method === "Accessibility.enable" && diagnostic) await diagnostic;
+            if (method === "Runtime.evaluate") return { result: { value: pageValue } };
+            if (method === "Accessibility.getFullAXTree") return { nodes: [] };
+            return undefined;
+          });
+        const send42 = makeSendCommand(diagnostic42);
+        const send43 = makeSendCommand(diagnostic43);
+        const send44 = makeSendCommand(null);
+        const guests = new Map([
+          [42, mockAutomationWebContents(send42, async () => snapshotImage, { id: 42 })],
+          [43, mockAutomationWebContents(send43, async () => snapshotImage, { id: 43 })],
+          [44, mockAutomationWebContents(send44, async () => snapshotImage, { id: 44 })],
+        ]);
+        fromId.mockImplementation((id) => guests.get(id ?? -1) ?? null);
+
+        yield* manager.createTab("tab_webview_swap");
+        yield* manager.registerWebview("tab_webview_swap", 42);
+        yield* Effect.yieldNow;
+        const snapshotFiber = yield* manager
+          .automationSnapshot("tab_webview_swap", ["ax"])
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.yieldNow;
+        expect(send42).toHaveBeenCalledWith("Accessibility.enable");
+
+        yield* manager.registerWebview("tab_webview_swap", 43);
+        yield* Effect.yieldNow;
+        release42();
+        yield* Effect.yieldNow;
+        expect(send43).toHaveBeenCalledWith("Accessibility.enable");
+
+        yield* manager.registerWebview("tab_webview_swap", 44);
+        yield* Effect.yieldNow;
+        release43();
+        yield* Fiber.join(snapshotFiber);
+
+        expect(send42).not.toHaveBeenCalledWith("Runtime.evaluate", expect.anything());
+        expect(send43).not.toHaveBeenCalledWith("Runtime.evaluate", expect.anything());
+        expect(send44).toHaveBeenCalledWith("Runtime.evaluate", expect.anything());
+      }),
+    ),
+  );
+
   effectIt.effect("omits ax, console, and network unless include asks", () =>
     withManager((manager) =>
       Effect.gen(function* () {
-        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+        const sendCommand = vi.fn(async (method: string, _params?: Record<string, unknown>) => {
           if (method === "Runtime.evaluate") {
             return { result: { value: pageValue } };
           }
