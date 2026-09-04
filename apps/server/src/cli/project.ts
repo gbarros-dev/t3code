@@ -7,7 +7,6 @@ import {
   ProjectId,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
-import * as NodeOS from "node:os";
 import * as Console from "effect/Console";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -26,6 +25,7 @@ import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 
 import * as ServerConfig from "../config.ts";
+import { expandHomePathWith } from "../pathExpansion.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { OrchestrationLayerLive } from "../orchestration/runtimeLayer.ts";
@@ -236,13 +236,7 @@ const normalizeWorkspaceRootForProjectCommand = Effect.fn(
 });
 
 function resolveWorkspaceRootIdentifier(identifier: string, path: Path.Path): string {
-  const expandedIdentifier =
-    identifier === "~"
-      ? NodeOS.homedir()
-      : identifier.startsWith("~/") || identifier.startsWith("~\\")
-        ? path.join(NodeOS.homedir(), identifier.slice(2))
-        : identifier;
-  return path.resolve(expandedIdentifier);
+  return path.resolve(expandHomePathWith(identifier, path));
 }
 
 const resolveProjectTitle = Effect.fn("resolveProjectTitle")(function* (
